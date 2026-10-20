@@ -1,0 +1,7 @@
+data
+runtime
+server/node_modules
+server/prisma/*.db
+server/prisma/*.db-journal
+server/.env
+xueji.env

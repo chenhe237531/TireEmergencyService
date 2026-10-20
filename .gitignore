@@ -1,0 +1,35 @@
+node_modules
+dist
+.DS_Store
+*.log
+.env.local
+apps/server/.env
+apps/server/prisma/*.db
+apps/server/prisma/*.db-journal
+apps/server/prisma/schema.mysql.prisma
+apps/server/uploads
+apps/miniapp/src/pages.json
+apps/miniapp/src/manifest.json
+.eslintcache
+deploy/.bundle
+apps/server/dist
+apps/miniapp/dist
+apps/admin/dist
+
+# 本地截图预览
+.preview/
+
+# 微信开发者工具本地配置（各人环境不同，不入库）
+apps/miniapp/project.config.json
+apps/miniapp/project.private.config.json
+
+# IDE / agent 工作区
+.trae/
+.workbuddy/
+# 路演材料(大体积截图与 HTML,不入库)
+pitch/
+# 云托管部署包(构建产物)
+deploy/.bundle/
+deploy/xueji-cloudrun*.zip
+deploy/tire-cloudrun*.zip
+.zcode/

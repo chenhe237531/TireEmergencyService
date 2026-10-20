@@ -1,0 +1,146 @@
+// 小蚂蚁 · 轮胎紧急救援与维修服务平台 —— 数据模型（唯一事实源）
+//
+// 约定（沿用 XueJiMeiYe 风格）：
+//   - 不用 Prisma enum，全部 String + 注释枚举，避免 SQLite/MySQL 迁移差异
+//   - camelCase 字段；Int 自增主键；createdAt 默认当前时间
+//   - 长文本字段加 `// mysql: @db.Text` 标记（MySQL 的 String 默认 VARCHAR(191)）
+//   - MySQL 版 schema.mysql.prisma 由 prisma/db.js 自动生成，请勿手改
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+// ─── 账号 ───
+
+/** 后台员工（平台运营方），账号密码登录 */
+model Staff {
+  id          Int       @id @default(autoincrement())
+  username    String    @unique
+  password    String // sha256 哈希，不存明文
+  name        String
+  role        String    @default("ops") // super_admin 超级管理员 | ops 运营
+  status      String    @default("active") // active | disabled
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+}
+
+/** 司机端用户（小程序），openid 首次登录自动创建 */
+model Driver {
+  id          Int       @id @default(autoincrement())
+  openid      String?   @unique
+  nickname    String    @default("微信用户")
+  avatarUrl   String    @default("")
+  phone       String    @default("")
+  role        String    @default("") // private_owner 私人车主 | fleet 车队 | store 服务门店；空=未完善身份
+  status      String    @default("active") // active | blocked
+  lastLoginAt DateTime?
+  createdAt   DateTime  @default(now())
+  viewLogs    ViewLog[]
+  rescues     RescueAlert[]
+  consults    ConsultRequest[]
+}
+
+// ─── 门店（信息由后台录入；真实地址/电话仅后台可见，端上只做模糊展示） ───
+
+model Store {
+  id           Int       @id @default(autoincrement())
+  name         String
+  category     String // tire_big 大车轮胎店 | tire_small 小车轮胎店 | tire_both 轮胎店(大小车) | repair_big 大车修理厂 | repair_small 小车修理厂 | towing 救援拖车
+  mainServices String    @default("") // 主营项目展示文案，如「补胎、换胎、动平衡」
+  score        Float     @default(5) // 评分 0-5（后台录入的展示字段，非用户评价）
+  lat          Float // 纬度
+  lng          Float // 经度
+  address      String    @default("") // 完整地址（仅后台可见，不下发端上）
+  phone        String    @default("") // 门店电话（仅后台可见，不下发端上）
+  contactName  String    @default("") // 门店联系人（仅后台可见）
+  areaLabel    String    @default("") // 模糊区域名，如「高新区 · 距您 1.5km」的区域部分
+  sort         Int       @default(0) // 同距离下的人工排序权重，越大越前
+  status       String    @default("active") // active 展示 | hidden 隐藏
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  viewLogs     ViewLog[]
+}
+
+// ─── 业务工单（平台人工调度：不走线上交易） ───
+
+/** 故障找救援：司机一键触发的求助通知，后台收到后线下电话联系 */
+model RescueAlert {
+  id           Int       @id @default(autoincrement())
+  driverId     Int?
+  driver       Driver?   @relation(fields: [driverId], references: [id])
+  lat          Float?
+  lng          Float?
+  locationDesc String    @default("") // mysql: @db.Text
+  status       String    @default("pending") // pending 待处理 | contacting 跟进中 | resolved 已解决 | cancelled 已取消
+  note         String    @default("") // 后台跟进备注 // mysql: @db.Text
+  handledBy    String    @default("") // 处理人（员工姓名）
+  handledAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+/** 服务咨询：司机提交的求助表单（车牌/车型/位置/故障描述/图片/联系方式） */
+model ConsultRequest {
+  id           Int       @id @default(autoincrement())
+  driverId     Int?
+  driver       Driver?   @relation(fields: [driverId], references: [id])
+  plateNo      String    @default("") // 车牌号
+  carModel     String    @default("") // 车型
+  lat          Float?
+  lng          Float?
+  locationDesc String    @default("") // mysql: @db.Text
+  description  String    @default("") // 故障描述 // mysql: @db.Text
+  images       Json? // 图片路径数组，如 ["/uploads/a.jpg", ...]
+  contactName  String    @default("")
+  contactPhone String    @default("")
+  status       String    @default("pending") // 同 RescueAlert
+  note         String    @default("") // mysql: @db.Text
+  handledBy    String    @default("")
+  handledAt    DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+}
+
+/** 浏览/点击痕迹：后台用于判断司机意向、主动线下对接 */
+model ViewLog {
+  id        Int      @id @default(autoincrement())
+  driverId  Int
+  driver    Driver   @relation(fields: [driverId], references: [id])
+  storeId   Int
+  store     Store    @relation(fields: [storeId], references: [id])
+  action    String   @default("view") // view 曝光 | click 点击
+  createdAt DateTime @default(now())
+}
+
+// ─── 平台内容 ───
+
+model Faq {
+  id        Int      @id @default(autoincrement())
+  question  String
+  answer    String // mysql: @db.Text
+  sort      Int      @default(0)
+  status    String   @default("active") // active | hidden
+  createdAt DateTime @default(now())
+}
+
+/** 平台设置：key-value（servicePhone 客服电话 | wechatQr 客服二维码 | about 关于我们 | userAgreement 用户协议 | privacyPolicy 隐私政策 | shareTitle 分享文案） */
+model Setting {
+  key   String @id
+  value String @default("") // mysql: @db.Text
+}
+
+/** 上传文件存数据库（云托管磁盘易失）；访问路径 /uploads/<name> */
+model UploadFile {
+  id        Int      @id @default(autoincrement())
+  name      String   @unique
+  mime      String
+  size      Int
+  data      Bytes
+  createdBy String   @default("")
+  createdAt DateTime @default(now())
+}

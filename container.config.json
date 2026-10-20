@@ -1,0 +1,21 @@
+{
+  "containerPort": 80,
+  "dockerfilePath": "Dockerfile",
+  "buildDir": "",
+  "minNum": 1,
+  "maxNum": 3,
+  "cpu": 1,
+  "mem": 2,
+  "policyType": "cpu",
+  "policyThreshold": 80,
+  "envParams": {
+    "DB_PROVIDER": "mysql",
+    "MYSQL_DATABASE": "xueji"
+  },
+  "customLogs": "stdout",
+  "initialDelaySeconds": 10,
+  "dataBaseName": "xueji",
+  "executeSQLs": [
+    "CREATE DATABASE IF NOT EXISTS xueji DEFAULT CHARACTER SET utf8mb4;"
+  ]
+}

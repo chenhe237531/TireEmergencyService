@@ -1,0 +1,11 @@
+packages:
+  - apps/*
+onlyBuiltDependencies:
+  - esbuild
+  - vue-demi
+  - core-js
+  - '@prisma/client'
+  - '@prisma/engines'
+  - prisma
+  - '@nestjs/core'
+  - bcryptjs

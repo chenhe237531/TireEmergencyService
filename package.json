@@ -1,0 +1,24 @@
+{
+  "name": "tire-rescue",
+  "private": true,
+  "version": "0.1.0",
+  "description": "小蚂蚁 · 轮胎紧急救援与维修服务平台（小程序 + 企业后台）",
+  "scripts": {
+    "dev:server": "pnpm --filter tire-server dev",
+    "dev:admin": "pnpm --filter tire-admin dev",
+    "dev:h5": "pnpm --filter tire-miniapp dev:h5",
+    "dev:mp": "pnpm --filter tire-miniapp dev:mp",
+    "build:server": "pnpm --filter tire-server build",
+    "build:admin": "pnpm --filter tire-admin build",
+    "build:h5": "pnpm --filter tire-miniapp build:h5",
+    "build:mp": "pnpm --filter tire-miniapp build:mp",
+    "check:mp": "bash scripts/ci-check.sh",
+    "db:reset": "pnpm --filter tire-server db:reset"
+  },
+  "packageManager": "pnpm@10.33.2",
+  "pnpm": {
+    "overrides": {
+      "unconfig": "7.3.2"
+    }
+  }
+}

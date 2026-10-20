@@ -1,0 +1,218 @@
+{
+  "note": "Issue 执行进度台账。读写入口：node scripts/gen-issues.mjs --claim <ID> <名> / --set-status <ID> <状态> [名]。不要手改 issues/*.md 里的 status（生成物，会被覆盖）。数据源里的 status 仅用于标记结构性已完成项（如 XJ-000 决策门）。",
+  "entries": {
+    "XJ-106": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-16T17:32:23.691Z",
+      "note": "分支 feat/XJ-106-route-placeholder（ff612da claim → 8064e72 实现 → 2f9f7c8 交付记录）已建 5 个占位页并双端构建通过，等待合并。实测发现 src/pages.json 是 gitignore 的生成物，路由由各页 definePage() 承载，故原『pages.json 独占』规则已作废。"
+    },
+    "XJ-101": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-16T17:34:32.173Z",
+      "note": "分支 feat/XJ-101-ci-check（7769c79）三段式 CI 入口落地。全量跑通：lint 13 改动文件零新增告警 / build 6~7s 成功 / 产物断言 4 项全过。负向测试：(a) 新增探针文件 no-var 被检出，exit=2；(b) 给 graphics 集合注入 currentColor 模拟 mask，重建后断言检出 47 处 mask，exit=4。AC#4 满足：提交仅含 package.json、apps/miniapp/package.json、scripts/ci-check.sh、scripts/lint-baseline.txt，未动任何业务代码。⚠️ 已查实的限制：assert 段断言的 .mo-*/.gd-* 与 i-graphics-* 来自动效/图形底座（src/style/motion.scss、graphics.scss），而该底座从未入库（git ls-tree main 的 src/style/ 只有 iconfont.css 与 index.scss），因此在纯 main + XJ-101 上该段必然为红——本轮通过是因为工作树里存在未提交的底座 WIP。"
+    },
+    "XJ-102": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-16T18:38:59.212Z"
+    },
+    "XJ-105": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-16T19:45:22.032Z"
+    },
+    "XJ-103": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-16T20:56:57.563Z"
+    },
+    "XJ-104": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-16T22:06:17.950Z"
+    },
+    "XJ-205": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-16T23:27:25.986Z"
+    },
+    "XJ-301": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-17T01:20:05.440Z",
+      "note": "分支 feat/XJ-301-prisma-tables（67a80de claim → 2725e4a 实现 → 2493e22 交付记录），按用户要求暂不推送。验收全过：db:reset 两次跑通（UserBadge=5/FamilyRelay=4/StoreStamp=2 行可读写）；三组唯一约束重复写入实测被拒 P2002（badgeCode 对 / peerId+date 对 / storeId+month 对，同店异月与同月异店可写）；schema +39/-0、seed +15/-0 零删改。StoreStamp 加 month 列承载一店一月一枚；FamilyRelay 补 (peerId,date) 反查索引；seed 徽章 code 为临时演示值，正式 24 枚目录由 XJ-303 定。注意：改 schema 后先 prisma:generate 再跑 seed（db push 带 --skip-generate）。"
+    },
+    "XJ-302": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-17T01:20:05.964Z",
+      "note": "分支 feat/XJ-302-checkin-weekly-verdict（7f58bf8 claim → afc3f28 实现），按用户要求暂不推送。checkins 增 streakDays/monthSignedDates（旧字段保留）；新增 GET /app/archive/weekly?week=YYYY-MM-DD（周一为周起点，week 传该周任意一天，上期传上周边界日期）；verdict/targetPct 与六维算法同源（verdictOf 复用 dimGrade），overview/INDEX trend/weekly 同一指标结论一致；指标 trend 为近 8 次达标率。实测全过：nest build 零错；起服务 curl 验证王阿姨 09-20 当周（index 68/delta +22/三件事）、本周空数据兜底、新用户全空结构、非法 week 400、无 token 401。完整响应示例见 issues/XJ-302.md 交付记录（git 历史）与 XJ-401/XJ-405 消费说明。"
+    },
+    "XJ-207": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-17T00:34:31.980Z",
+      "note": "分支 feat/XJ-207-archive-viz（基于 feat/XJ-206-chart-components 构建，合并顺序天然保持 206 → 207；--claim 因 206 未 done 被挡，台账手工登记 claimed → cb31ac9 实现 → 交付记录），按用户要求暂不推送。archive/index.vue 重写：XIndexRing 指数环（D8：countUp 仅 mo-full）+ XTrendChart 可点按趋势（chartW = windowWidth - 48）+ 新建 DimCard 六维达标卡（--meter-ok/near/low 令牌、mo-grow-x scaleX 生长、人话结论阈值与 engine.dimGrade 同源 优≥80/良≥60/需关注<60、useReveal 滚动入场只播一次）+ 形状对应骨架屏 240ms 交叉淡入（mo-off/乐龄关动画）；indexVerdict 读 D20 后端字段 d.verdict 未合并时兜底；保留指标卡/待办/医院报告入口/最近记录。ci-check 全绿（lint 2 文件零新增 / build 6s / 产物断言 4 项全过含 71 条 usingComponents）。"
+    },
+    "XJ-206": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-17T00:34:31.863Z",
+      "note": "分支 feat/XJ-206-chart-components（9d12df2 claim → f0b074a 实现），按用户要求暂不推送。XIndexRing：SVG data URI + rAF 推进（环生长 800ms / 数字滚动 600ms 缓出 1-(1-p)³，D8 合规），mo-off 直达终态，expose replay() 供滚动入场复用；XTrendChart：渐变面积 + rAF 重绘 dasharray 生长 800ms，数据点叠透明热区实现点按气泡（再点收起/切换不错位），refLow/refHigh 画参考区段。两组件零硬编码业务色（默认 themeHex().brand / 可 props 覆盖），不改 xj/utils.ts 既有导出，头注含用法示例（AC#1 自检方式）。ci-check 全绿（lint 2 文件零新增 / build 6s / 产物断言 4 项全过）。注：组件基于工作树动效底座（xj/motion.ts、style/motion.scss，WIP 未入库）编译，构建在含底座的工作树验证。XJ-207 消费两组件后将进 usingComponents 断言。"
+    },
+    "XJ-107": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-17T00:40:28.564Z",
+      "note": "分支 feat/XJ-107-motion-ownership（eb20da1 claim → ca3b509 实现），本机无 gh，走本地分支合并。**这是 R1 收口卡**：6 个零归属底座文件首次入库，+683 −1，只动 files_own：style/motion.scss（新，246 行，入库前 eslint --fix 修掉 30 条 format/prettier 纯格式）、xj/motion.ts（新，178 行，零改动）、XGraphic.vue（新，73）、XBadge.vue（新，159）、XReveal.vue（新，25）、main.ts（+2 −1，追加 motion.scss 入口 import，入口顺序视觉→令牌→动效未乱）。验证全绿：eslint 6 文件 RC=0；关沙箱 uni build -p mp-weixin → DONE Build complete.；自写产物断言 11/11（解析 selector→declarations，非数次数）；负向对照（注释掉 motion 入口重建）11/11→3/11，还原后 main.ts sha256 逐字节一致 1207e598…；运行时探针（esbuild 打包真实 motion.ts + uni 桩）14/14，证明 off 档 useReveal 首帧即 true 且全程未创建 IntersectionObserver（乐龄不闪空白），full 档为 false（反证非空洞）；语义保全检查 motion.scss 源侧 17 类/15 变量/5 关键帧 100% 进 app.wxss，重排未丢声明。证据 .preview/XJ-107_selfcheck.txt。⚠️ 遗留给下一棒：① scripts/ci-check.sh 的 R3「定义存在」断言（xj-rise+--mo-ease / xj-gd-bob+--gd-bob）至今仍是**未提交 WIP**，该文件属 XJ-101（done）的 files_own，本卡按一个文件一个 Owner 未越权提交 → main 上仍是宽前缀旧断言，需 XJ-101 owner 入库或另开小卡；② 归属空洞只收口一半：xj/graphics.ts + src/icons/graphics/** + uno.config.ts 仍属 XJ-601 且未入库，已提交的 components/archive/DimCard.vue import @/xj/graphics → 在这三者入库前纯 main 仍无法构建；③ .xj.night 未重定义 --alert/--star（夜色约 2.5:1）仍待开卡。"
+    },
+    "XJ-601": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-17T01:18:25.560Z"
+    },
+    "XJ-303": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-17T01:20:06.396Z"
+    },
+    "XJ-305": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-17T01:20:06.842Z"
+    },
+    "XJ-401": {
+      "status": "done",
+      "assignee": "hourly-agent",
+      "updatedAt": "2026-10-17T01:20:07.222Z"
+    },
+    "XJ-304": {
+      "status": "done",
+      "assignee": "win-B",
+      "updatedAt": "2026-10-17T01:44:59.012Z",
+      "note": "分支 feat/XJ-304-play-apis（1e0fd2c claim → 实现提交，基座=main@98de524）。三玩法 6 接口：接力棒 GET/POST /app/family/relay（D3 未绑定 bound=false 空状态；事务内双向查重，双方各+5 写 PointsLedger reasonCode=relay；周格子 rest/passed/today/future 不惩罚）；盲盒 GET/POST /app/games/box（服务端加权随机 BOX_PRIZES 概率公示总和100；免费1次+签到/任务/接力三个加成来源当日实时判定；GameProgress 乐观锁先写状态再发奖；知识卡取自审校题库带 D4 免责标注；体验券走 Lead game_box）；集章册 GET/POST /app/stores/stamps（N 家门店结构 D7 不硬编码；一店一月一枚 P2002→409 拒绝；staffNo 校验记经办人）。验证：tsc 0 错、ci-check 全绿、起服务 curl 实测 6 接口 14 场景全过（含双向重复接棒拒、拆盒耗尽拒、重复盖章拒、无效工号拒、门店404）。"
+    },
+    "XJ-201": {
+      "status": "done",
+      "assignee": "win-A",
+      "updatedAt": "2026-10-17T02:12:31.175Z"
+    },
+    "XJ-208": {
+      "status": "done",
+      "assignee": "win-C",
+      "updatedAt": "2026-10-17T02:26:52.194Z"
+    },
+    "XJ-702": {
+      "status": "done",
+      "assignee": "win-C",
+      "updatedAt": "2026-10-17T02:26:52.297Z"
+    },
+    "XJ-501": {
+      "status": "done",
+      "assignee": "win-C",
+      "updatedAt": "2026-10-17T02:26:52.402Z"
+    },
+    "XJ-706": {
+      "status": "done",
+      "assignee": "win-C",
+      "updatedAt": "2026-10-17T02:26:52.506Z"
+    },
+    "XJ-701": {
+      "status": "done",
+      "assignee": "win-C",
+      "updatedAt": "2026-10-17T02:26:52.606Z"
+    },
+    "XJ-703": {
+      "status": "done",
+      "assignee": "win-C",
+      "updatedAt": "2026-10-17T02:26:52.713Z"
+    },
+    "XJ-708": {
+      "status": "done",
+      "assignee": "win-C",
+      "updatedAt": "2026-10-17T02:26:52.813Z"
+    },
+    "XJ-704": {
+      "status": "done",
+      "assignee": "win-C",
+      "updatedAt": "2026-10-17T02:26:52.918Z"
+    },
+    "XJ-202": {
+      "status": "done",
+      "assignee": "win-A",
+      "updatedAt": "2026-10-17T02:39:28.648Z"
+    },
+    "XJ-403": {
+      "status": "done",
+      "assignee": "win-B",
+      "updatedAt": "2026-10-17T02:42:57.393Z"
+    },
+    "XJ-203": {
+      "status": "done",
+      "assignee": "win-A",
+      "updatedAt": "2026-10-17T02:52:18.352Z"
+    },
+    "XJ-204": {
+      "status": "done",
+      "assignee": "win-A",
+      "updatedAt": "2026-10-17T03:00:22.378Z"
+    },
+    "XJ-602": {
+      "status": "done",
+      "assignee": "win-A",
+      "updatedAt": "2026-10-17T03:08:46.494Z"
+    },
+    "XJ-603": {
+      "status": "done",
+      "assignee": "win-A",
+      "updatedAt": "2026-10-17T03:11:44.584Z"
+    },
+    "XJ-707": {
+      "status": "done",
+      "assignee": "win-A",
+      "updatedAt": "2026-10-17T03:29:19.724Z"
+    },
+    "XJ-802": {
+      "status": "done",
+      "assignee": "win-A",
+      "updatedAt": "2026-10-17T03:38:21.873Z"
+    },
+    "XJ-402": {
+      "status": "done",
+      "assignee": "win-B",
+      "updatedAt": "2026-10-17T03:55:45.127Z"
+    },
+    "XJ-404": {
+      "status": "done",
+      "assignee": "win-B",
+      "updatedAt": "2026-10-17T03:59:17.202Z"
+    },
+    "XJ-406": {
+      "status": "done",
+      "assignee": "win-B",
+      "updatedAt": "2026-10-17T04:02:27.819Z"
+    },
+    "XJ-405": {
+      "status": "done",
+      "assignee": "win-B",
+      "updatedAt": "2026-10-17T04:11:18.037Z"
+    },
+    "XJ-705": {
+      "status": "done",
+      "assignee": "win-B",
+      "updatedAt": "2026-10-17T04:27:50.092Z"
+    },
+    "XJ-801": {
+      "status": "done",
+      "assignee": "win-B",
+      "updatedAt": "2026-10-17T07:08:36.345Z"
+    },
+    "XJ-803": {
+      "status": "done",
+      "assignee": "win-A",
+      "updatedAt": "2026-10-17T07:08:36.390Z"
+    }
+  }
+}

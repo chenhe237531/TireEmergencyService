@@ -1,0 +1,337 @@
+{
+  "generatedAt": "2026-10-16T15:26:36.282Z",
+  "note": "由 scripts/fetch-graphics.js 生成，请勿手改。用于审计图形来源与许可。",
+  "totalBytes": 47041,
+  "count": 47,
+  "icons": [
+    {
+      "file": "badge-clover.svg",
+      "source": "fluent-emoji-flat:four-leaf-clover",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 909
+    },
+    {
+      "file": "badge-crown.svg",
+      "source": "fluent-emoji-flat:crown",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1385
+    },
+    {
+      "file": "badge-fire.svg",
+      "source": "fluent-emoji-flat:fire",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 520
+    },
+    {
+      "file": "badge-medal-gold.svg",
+      "source": "fluent-emoji-flat:1st-place-medal",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1063
+    },
+    {
+      "file": "badge-medal-honor.svg",
+      "source": "fluent-emoji-flat:military-medal",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1293
+    },
+    {
+      "file": "badge-star.svg",
+      "source": "fluent-emoji-flat:glowing-star",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1134
+    },
+    {
+      "file": "badge-trophy.svg",
+      "source": "fluent-emoji-flat:trophy",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1206
+    },
+    {
+      "file": "care-bell.svg",
+      "source": "fluent-emoji-flat:bell",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 612
+    },
+    {
+      "file": "care-chart.svg",
+      "source": "fluent-emoji-flat:bar-chart",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 794
+    },
+    {
+      "file": "care-cross.svg",
+      "source": "fluent-emoji-flat:cross-mark",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 378
+    },
+    {
+      "file": "care-done.svg",
+      "source": "fluent-emoji-flat:check-mark-button",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 445
+    },
+    {
+      "file": "care-heart.svg",
+      "source": "fluent-emoji-flat:heart-with-ribbon",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1944
+    },
+    {
+      "file": "care-moon.svg",
+      "source": "fluent-emoji-flat:crescent-moon",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 598
+    },
+    {
+      "file": "care-pill.svg",
+      "source": "fluent-emoji-flat:pill",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 403
+    },
+    {
+      "file": "care-salad.svg",
+      "source": "fluent-emoji-flat:green-salad",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1579
+    },
+    {
+      "file": "care-seed.svg",
+      "source": "fluent-emoji-flat:seedling",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 388
+    },
+    {
+      "file": "care-stethoscope.svg",
+      "source": "fluent-emoji-flat:stethoscope",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 899
+    },
+    {
+      "file": "care-sun.svg",
+      "source": "fluent-emoji-flat:sun",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 848
+    },
+    {
+      "file": "care-up.svg",
+      "source": "fluent-emoji-flat:chart-increasing",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 615
+    },
+    {
+      "file": "care-wait.svg",
+      "source": "fluent-emoji-flat:hourglass-not-done",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1058
+    },
+    {
+      "file": "care-warn.svg",
+      "source": "fluent-emoji-flat:warning",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 417
+    },
+    {
+      "file": "dim-contour.svg",
+      "source": "fluent-emoji-flat:gem-stone",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 853
+    },
+    {
+      "file": "dim-fitness.svg",
+      "source": "fluent-emoji-flat:high-voltage",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 300
+    },
+    {
+      "file": "dim-mind.svg",
+      "source": "fluent-emoji-flat:relieved-face",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1065
+    },
+    {
+      "file": "dim-posture.svg",
+      "source": "fluent-emoji-flat:balance-scale",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1460
+    },
+    {
+      "file": "dim-shape.svg",
+      "source": "fluent-emoji-flat:flexed-biceps",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1034
+    },
+    {
+      "file": "dim-skin.svg",
+      "source": "fluent-emoji-flat:droplet",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 239
+    },
+    {
+      "file": "doc-calendar.svg",
+      "source": "fluent-emoji-flat:calendar",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1241
+    },
+    {
+      "file": "doc-memo.svg",
+      "source": "fluent-emoji-flat:memo",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1088
+    },
+    {
+      "file": "doc-scroll.svg",
+      "source": "fluent-emoji-flat:scroll",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 720
+    },
+    {
+      "file": "mood-hug.svg",
+      "source": "fluent-emoji-flat:hugging-face",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1931
+    },
+    {
+      "file": "mood-love.svg",
+      "source": "fluent-emoji-flat:smiling-face-with-hearts",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1672
+    },
+    {
+      "file": "mood-smile.svg",
+      "source": "fluent-emoji-flat:grinning-face-with-smiling-eyes",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 953
+    },
+    {
+      "file": "mood-think.svg",
+      "source": "fluent-emoji-flat:thinking-face",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1656
+    },
+    {
+      "file": "play-ball.svg",
+      "source": "fluent-emoji-flat:crystal-ball",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1115
+    },
+    {
+      "file": "play-balloon.svg",
+      "source": "fluent-emoji-flat:balloon",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1070
+    },
+    {
+      "file": "play-celebrate.svg",
+      "source": "fluent-emoji-flat:party-popper",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 2310
+    },
+    {
+      "file": "play-dice.svg",
+      "source": "fluent-emoji-flat:game-die",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1628
+    },
+    {
+      "file": "play-gift.svg",
+      "source": "fluent-emoji-flat:wrapped-gift",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 670
+    },
+    {
+      "file": "play-ring.svg",
+      "source": "fluent-emoji-flat:ring",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 793
+    },
+    {
+      "file": "play-sparkle.svg",
+      "source": "fluent-emoji-flat:sparkles",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 992
+    },
+    {
+      "file": "play-ticket.svg",
+      "source": "fluent-emoji-flat:ticket",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1169
+    },
+    {
+      "file": "play-wand.svg",
+      "source": "fluent-emoji-flat:magic-wand",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1340
+    },
+    {
+      "file": "store-bag.svg",
+      "source": "fluent-emoji-flat:shopping-bags",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 923
+    },
+    {
+      "file": "store-house.svg",
+      "source": "fluent-emoji-flat:house",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 1040
+    },
+    {
+      "file": "talk-bubble.svg",
+      "source": "fluent-emoji-flat:speech-balloon",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 657
+    },
+    {
+      "file": "talk-megaphone.svg",
+      "source": "fluent-emoji-flat:megaphone",
+      "set": "fluent-emoji-flat",
+      "license": "MIT",
+      "bytes": 634
+    }
+  ]
+}
