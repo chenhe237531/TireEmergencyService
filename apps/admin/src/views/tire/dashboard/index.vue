@@ -288,7 +288,9 @@ onUnmounted(stopPolling);
           </div>
           <div class="min-w-0">
             <div class="flex items-center gap-2">
-              <span class="text-lg font-semibold text-[var(--el-text-color-primary)]">
+              <span
+                class="text-lg font-semibold text-[var(--el-text-color-primary)]"
+              >
                 工作台
               </span>
               <el-tag v-if="showRoleTag" size="small" effect="plain" round>
@@ -302,12 +304,20 @@ onUnmounted(stopPolling);
         </div>
         <div class="ml-auto flex items-center gap-4">
           <div class="text-right">
-            <div class="text-xs text-[var(--el-text-color-secondary)]">最后更新</div>
-            <div class="mt-0.5 text-sm font-medium tabular-nums text-[var(--el-text-color-primary)]">
+            <div class="text-xs text-[var(--el-text-color-secondary)]">
+              最后更新
+            </div>
+            <div
+              class="mt-0.5 text-sm font-medium tabular-nums text-[var(--el-text-color-primary)]"
+            >
               {{ updatedAt || "—" }}
             </div>
           </div>
-          <el-button :icon="IconRefresh" :loading="refreshing" @click="manualRefresh">
+          <el-button
+            :icon="IconRefresh"
+            :loading="refreshing"
+            @click="manualRefresh"
+          >
             刷新
           </el-button>
         </div>
@@ -344,7 +354,9 @@ onUnmounted(stopPolling);
         <template #header>
           <div class="flex-bc flex-wrap gap-2">
             <div class="font-medium">近 7 天趋势</div>
-            <div class="flex items-center gap-4 text-xs text-[var(--el-text-color-secondary)]">
+            <div
+              class="flex items-center gap-4 text-xs text-[var(--el-text-color-secondary)]"
+            >
               <span>
                 救援通知
                 <b class="ml-1 text-sm font-medium tabular-nums text-[#E8721C]">

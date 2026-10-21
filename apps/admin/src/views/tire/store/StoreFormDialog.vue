@@ -15,7 +15,7 @@ const props = defineProps<{
 
 const emit = defineEmits<{
   (e: "update:modelValue", value: boolean): void;
-  (e: "saved", mode: "create" | "edit"): void;
+  (e: "saved", mode: "create" | "edit", row: StoreItem): void;
 }>();
 
 const formRef = ref<FormInstance>();
@@ -27,7 +27,9 @@ const visible = computed({
   set: value => emit("update:modelValue", value)
 });
 
-const categoryOptions = Object.entries(STORE_CATEGORIES).map(([value, label]) => ({ value, label }));
+const categoryOptions = Object.entries(STORE_CATEGORIES).map(
+  ([value, label]) => ({ value, label })
+);
 
 interface StoreForm {
   name: string;
@@ -82,11 +84,17 @@ const toForm = (row: StoreItem): StoreForm => ({
  * 越界文案要带上区间，方便运营知道有效范围。
  */
 const coordValidator = (label: string, min: number, max: number) => {
-  return (_rule: unknown, value: unknown, callback: (error?: Error) => void) => {
-    if (value === undefined || value === null || value === "") return callback();
+  return (
+    _rule: unknown,
+    value: unknown,
+    callback: (error?: Error) => void
+  ) => {
+    if (value === undefined || value === null || value === "")
+      return callback();
     const num = Number(value);
     if (Number.isNaN(num)) return callback(new Error(`${label}必须是数字`));
-    if (num < min || num > max) return callback(new Error(`${label}需在 ${min} ~ ${max} 之间`));
+    if (num < min || num > max)
+      return callback(new Error(`${label}需在 ${min} ~ ${max} 之间`));
     callback();
   };
 };
@@ -103,7 +111,10 @@ const rules: FormRules = {
   ],
   lng: [
     { required: true, message: "请输入经度", trigger: ["blur", "change"] },
-    { validator: coordValidator("经度", -180, 180), trigger: ["blur", "change"] }
+    {
+      validator: coordValidator("经度", -180, 180),
+      trigger: ["blur", "change"]
+    }
   ]
 };
 
@@ -123,8 +134,10 @@ function coordError(): string | null {
   if (form.lng === undefined || form.lng === null) return "请输入经度";
   if (!Number.isFinite(Number(form.lat))) return "纬度必须是数字";
   if (!Number.isFinite(Number(form.lng))) return "经度必须是数字";
-  if (Number(form.lat) < -90 || Number(form.lat) > 90) return "纬度需在 -90 ~ 90 之间";
-  if (Number(form.lng) < -180 || Number(form.lng) > 180) return "经度需在 -180 ~ 180 之间";
+  if (Number(form.lat) < -90 || Number(form.lat) > 90)
+    return "纬度需在 -90 ~ 90 之间";
+  if (Number(form.lng) < -180 || Number(form.lng) > 180)
+    return "经度需在 -180 ~ 180 之间";
   return null;
 }
 
@@ -156,15 +169,13 @@ async function handleSubmit() {
 
   submitting.value = true;
   try {
-    if (props.row) {
-      await storeUpdate(props.row.id, payload);
-    } else {
-      // 新增的门店默认展示中
-      await storeCreate({ ...payload, status: "active" });
-    }
+    const saved = props.row
+      ? await storeUpdate(props.row.id, payload)
+      : // 新增的门店默认展示中
+        await storeCreate({ ...payload, status: "active" });
     message(props.row ? "门店信息已更新" : "门店创建成功", { type: "success" });
     visible.value = false;
-    emit("saved", props.row ? "edit" : "create");
+    emit("saved", props.row ? "edit" : "create", saved);
   } catch (err) {
     // 失败保持弹窗打开，运营可直接修改后重试
     message((err as Error).message || "保存失败", { type: "error" });
@@ -350,7 +361,9 @@ async function handleSubmit() {
     </el-form>
 
     <template #footer>
-      <el-button :disabled="submitting" @click="visible = false">取消</el-button>
+      <el-button :disabled="submitting" @click="visible = false"
+        >取消</el-button
+      >
       <el-button type="primary" :loading="submitting" @click="handleSubmit">
         确定
       </el-button>

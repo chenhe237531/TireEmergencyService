@@ -34,7 +34,10 @@ const accentClass = {
     <template #header>
       <div class="flex-bc gap-2">
         <div class="flex min-w-0 items-center gap-2">
-          <span class="h-4 w-1 shrink-0 rounded-full" :class="accentClass[accent]" />
+          <span
+            class="h-4 w-1 shrink-0 rounded-full"
+            :class="accentClass[accent]"
+          />
           <span class="truncate font-medium">{{ title }}</span>
           <el-tag
             v-if="rows.length"
@@ -46,7 +49,12 @@ const accentClass = {
             {{ rows.length }}
           </el-tag>
         </div>
-        <el-button link type="primary" class="shrink-0" @click="emit('view-all')">
+        <el-button
+          link
+          type="primary"
+          class="shrink-0"
+          @click="emit('view-all')"
+        >
           查看全部
           <el-icon class="ml-1"><IconArrowRight /></el-icon>
         </el-button>

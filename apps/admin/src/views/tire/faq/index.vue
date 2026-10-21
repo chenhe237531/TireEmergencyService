@@ -11,6 +11,9 @@ import FaqFormDialog from "./FaqFormDialog.vue";
 
 defineOptions({ name: "TireFaq" });
 
+/** el-table 插槽 row 的静态类型是 DefaultRow，统一在此断言为业务类型 */
+const asFaq = (row: unknown) => row as FaqItem;
+
 const loading = ref(false);
 const list = ref<FaqItem[]>([]);
 /** 正在切换显隐的问题 id，用于行内 switch loading */
@@ -160,24 +163,14 @@ onActivated(() => {
         </el-form-item>
       </el-form>
 
-      <el-table
-        v-loading="loading"
-        :data="list"
-        border
-        stripe
-        row-key="id"
-      >
+      <el-table v-loading="loading" :data="list" border stripe row-key="id">
         <el-table-column label="排序值" width="90" align="center">
           <template #default="{ row }">
             <span class="font-medium tabular-nums">{{ row.sort }}</span>
           </template>
         </el-table-column>
 
-        <el-table-column
-          label="问题"
-          min-width="220"
-          show-overflow-tooltip
-        >
+        <el-table-column label="问题" min-width="220" show-overflow-tooltip>
           <template #default="{ row }">
             <span class="font-medium">{{ row.question }}</span>
           </template>
@@ -204,7 +197,7 @@ onActivated(() => {
               <el-switch
                 :model-value="row.status === 'active'"
                 :loading="statusLoadingId === row.id"
-                @change="val => handleToggleStatus(row, Boolean(val))"
+                @change="val => handleToggleStatus(asFaq(row), Boolean(val))"
               />
               <span
                 class="text-xs"
@@ -230,14 +223,14 @@ onActivated(() => {
 
         <el-table-column label="操作" width="110" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">
+            <el-button link type="primary" @click="openEdit(asFaq(row))">
               编辑
             </el-button>
             <el-button
               link
               type="danger"
               :loading="deletingId === row.id"
-              @click="handleDelete(row)"
+              @click="handleDelete(asFaq(row))"
             >
               删除
             </el-button>
@@ -257,10 +250,6 @@ onActivated(() => {
       </el-table>
     </el-card>
 
-    <FaqFormDialog
-      v-model="dialogVisible"
-      :row="editingRow"
-      @saved="getList"
-    />
+    <FaqFormDialog v-model="dialogVisible" :row="editingRow" @saved="getList" />
   </div>
 </template>

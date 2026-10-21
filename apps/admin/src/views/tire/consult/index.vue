@@ -1,10 +1,5 @@
 <script setup lang="ts">
-import {
-  onActivated,
-  onMounted,
-  reactive,
-  ref
-} from "vue";
+import { onActivated, onMounted, reactive, ref } from "vue";
 import dayjs from "dayjs";
 import { message } from "@/utils/message";
 import { consultList, ORDER_STATUS, statusTag } from "@/api/tire";
@@ -12,6 +7,9 @@ import type { ConsultItem } from "@/api/tire";
 import ConsultDetailDrawer from "./ConsultDetailDrawer.vue";
 
 defineOptions({ name: "TireConsultList" });
+
+/** el-table 插槽 row 的静态类型是 DefaultRow，统一在此断言为业务类型 */
+const asConsult = (row: unknown) => row as ConsultItem;
 
 const TABS = [
   { value: "all", label: "全部" },
@@ -41,7 +39,9 @@ const detailId = ref<number | null>(null);
 let hasActivated = false;
 
 const formatTime = (value?: string | null) =>
-  value && dayjs(value).isValid() ? dayjs(value).format("YYYY-MM-DD HH:mm") : "—";
+  value && dayjs(value).isValid()
+    ? dayjs(value).format("YYYY-MM-DD HH:mm")
+    : "—";
 
 function imageCount(row: ConsultItem) {
   return row.images?.length || 0;
@@ -136,11 +136,7 @@ onActivated(() => {
       </template>
 
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
-        <el-tab-pane
-          v-for="tab in TABS"
-          :key="tab.value"
-          :name="tab.value"
-        >
+        <el-tab-pane v-for="tab in TABS" :key="tab.value" :name="tab.value">
           <template #label>
             <span class="inline-flex items-center gap-1">
               {{ tab.label }}
@@ -191,9 +187,11 @@ onActivated(() => {
         row-key="id"
         empty-text="暂无咨询工单"
       >
-        <el-table-column label="编号" width="70">
+        <el-table-column label="编号" width="60">
           <template #default="{ row }">
-            <span class="font-medium tabular-nums text-[var(--el-text-color-primary)]">
+            <span
+              class="font-medium tabular-nums text-[var(--el-text-color-primary)]"
+            >
               #{{ row.id }}
             </span>
           </template>
@@ -205,15 +203,24 @@ onActivated(() => {
           </template>
         </el-table-column>
 
-        <el-table-column prop="carModel" label="车型" width="112" show-overflow-tooltip>
+        <el-table-column
+          prop="carModel"
+          label="车型"
+          width="108"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">
-            <span :class="{ 'text-[var(--el-text-color-secondary)]': !row.carModel }">
+            <span
+              :class="{
+                'text-[var(--el-text-color-secondary)]': !row.carModel
+              }"
+            >
               {{ row.carModel || "—" }}
             </span>
           </template>
         </el-table-column>
 
-        <el-table-column label="联系人" width="140">
+        <el-table-column label="联系人" width="132">
           <template #default="{ row }">
             <div>{{ row.contactName || "—" }}</div>
             <a
@@ -226,26 +233,49 @@ onActivated(() => {
           </template>
         </el-table-column>
 
-        <el-table-column prop="locationDesc" label="位置" min-width="140" show-overflow-tooltip>
+        <el-table-column
+          prop="locationDesc"
+          label="位置"
+          min-width="140"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">
-            <span :class="{ 'text-[var(--el-text-color-secondary)]': !row.locationDesc }">
+            <span
+              :class="{
+                'text-[var(--el-text-color-secondary)]': !row.locationDesc
+              }"
+            >
               {{ row.locationDesc || "—" }}
             </span>
           </template>
         </el-table-column>
 
-        <el-table-column prop="description" label="故障描述" min-width="180" show-overflow-tooltip>
+        <el-table-column
+          prop="description"
+          label="故障描述"
+          min-width="220"
+          show-overflow-tooltip
+        >
           <template #default="{ row }">
-            <span :class="{ 'text-[var(--el-text-color-secondary)]': !row.description }">
+            <span
+              :class="{
+                'text-[var(--el-text-color-secondary)]': !row.description
+              }"
+            >
               {{ row.description || "—" }}
             </span>
           </template>
         </el-table-column>
 
-        <el-table-column label="图片" width="82" align="center">
+        <el-table-column label="图片" width="76" align="center">
           <template #default="{ row }">
-            <el-tag v-if="imageCount(row)" size="small" type="info" effect="plain">
-              {{ imageCount(row) }} 张
+            <el-tag
+              v-if="imageCount(asConsult(row))"
+              size="small"
+              type="info"
+              effect="plain"
+            >
+              {{ imageCount(asConsult(row)) }} 张
             </el-tag>
             <span v-else class="text-[var(--el-text-color-secondary)]">—</span>
           </template>
@@ -259,9 +289,11 @@ onActivated(() => {
           </template>
         </el-table-column>
 
-        <el-table-column label="时间" width="128">
+        <el-table-column label="时间" width="148">
           <template #default="{ row }">
-            <span class="whitespace-nowrap text-xs tabular-nums text-[var(--el-text-color-regular)]">
+            <span
+              class="whitespace-nowrap text-xs tabular-nums text-[var(--el-text-color-regular)]"
+            >
               {{ formatTime(row.createdAt) }}
             </span>
           </template>
@@ -269,7 +301,9 @@ onActivated(() => {
 
         <el-table-column label="操作" width="76" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openDetail(row)">详情</el-button>
+            <el-button link type="primary" @click="openDetail(asConsult(row))"
+              >详情</el-button
+            >
           </template>
         </el-table-column>
       </el-table>

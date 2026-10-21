@@ -217,6 +217,7 @@ onActivated(() => {
     <template v-else>
       <el-form
         ref="formRef"
+        class="max-w-[820px]"
         :model="form"
         :rules="rules"
         label-width="110px"
@@ -277,10 +278,10 @@ onActivated(() => {
                   </el-button>
                 </div>
                 <div class="text-xs leading-5 text-text_color_regular">
-                  <div>仅支持 PNG / JPG，大小不超过 2MB，建议使用方形图片。</div>
-                  <div v-if="form.wechatQr">
-                    删除后小程序端将不展示二维码。
+                  <div>
+                    仅支持 PNG / JPG，大小不超过 2MB，建议使用方形图片。
                   </div>
+                  <div v-if="form.wechatQr">删除后小程序端将不展示二维码。</div>
                   <div v-else>上传后需点「保存设置」才会在小程序端生效。</div>
                 </div>
               </div>

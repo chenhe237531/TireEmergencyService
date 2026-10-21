@@ -126,7 +126,10 @@ async function backfillSelected() {
         phone: item.phone
       }));
     }
-    if (storeId.value && !storeOptions.value.some(item => item.id === storeId.value)) {
+    if (
+      storeId.value &&
+      !storeOptions.value.some(item => item.id === storeId.value)
+    ) {
       const res = await storeList({ page: 1, pageSize: BACKFILL_SIZE });
       storeOptions.value = (res.list || []).map(item => ({
         id: item.id,
@@ -153,7 +156,10 @@ async function getList() {
     list.value = res.list || [];
     pagination.total = res.total || 0;
     // 痕迹行里带着司机资料，用来补全下拉显示名（司机可能不在前 20 条候选里）
-    if (driverId.value && !driverOptions.value.some(item => item.id === driverId.value)) {
+    if (
+      driverId.value &&
+      !driverOptions.value.some(item => item.id === driverId.value)
+    ) {
       const row = list.value.find(item => item.driver?.id === driverId.value);
       if (row?.driver) driverOptions.value.unshift({ ...row.driver });
     }
@@ -199,7 +205,8 @@ function syncUrl() {
 function applyRouteQuery() {
   driverId.value = toId(route.query.driverId);
   storeId.value = toId(route.query.storeId);
-  action.value = typeof route.query.action === "string" ? route.query.action : "";
+  action.value =
+    typeof route.query.action === "string" ? route.query.action : "";
   const start = typeof route.query.start === "string" ? route.query.start : "";
   const end = typeof route.query.end === "string" ? route.query.end : "";
   dateRange.value = start && end ? [start, end] : null;
@@ -382,7 +389,12 @@ onActivated(() => {
           <template #default="{ row }">
             <div class="flex items-center gap-2">
               <span class="truncate">{{ row.store?.name || "—" }}</span>
-              <el-tag v-if="row.categoryName" type="info" effect="plain" size="small">
+              <el-tag
+                v-if="row.categoryName"
+                type="info"
+                effect="plain"
+                size="small"
+              >
                 {{ row.categoryName }}
               </el-tag>
             </div>
@@ -391,7 +403,10 @@ onActivated(() => {
 
         <el-table-column label="动作" width="100">
           <template #default="{ row }">
-            <el-tag :type="row.action === 'click' ? 'primary' : 'info'" effect="light">
+            <el-tag
+              :type="row.action === 'click' ? 'primary' : 'info'"
+              effect="light"
+            >
               {{ row.actionName || (row.action === "click" ? "点击" : "曝光") }}
             </el-tag>
           </template>

@@ -43,7 +43,9 @@ const tagType = (status: string): TagType =>
   (statusTag[status] || "info") as TagType;
 
 const formatTime = (value?: string | null) =>
-  value && dayjs(value).isValid() ? dayjs(value).format("YYYY-MM-DD HH:mm") : "—";
+  value && dayjs(value).isValid()
+    ? dayjs(value).format("YYYY-MM-DD HH:mm")
+    : "—";
 
 /** 每次打开都重置表单：备注预填已有跟进记录，方便在原记录上追加 */
 watch(
@@ -176,7 +178,9 @@ async function handleSubmit() {
     </template>
 
     <template #footer>
-      <el-button :disabled="submitting" @click="visible = false">取消</el-button>
+      <el-button :disabled="submitting" @click="visible = false"
+        >取消</el-button
+      >
       <el-button
         type="primary"
         :loading="submitting"

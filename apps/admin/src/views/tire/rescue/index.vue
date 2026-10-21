@@ -27,6 +27,9 @@ import IconPhone from "~icons/tabler/phone";
 
 defineOptions({ name: "TireRescueList" });
 
+/** el-table 插槽 row 的静态类型是 DefaultRow，统一在此断言为业务类型 */
+const asRescue = (row: unknown) => row as RescueItem;
+
 /** 待处理数量轮询间隔：30 秒（keepAlive 失活时停止） */
 const POLL_INTERVAL = 30 * 1000;
 
@@ -62,7 +65,9 @@ let lastUnreadCount: number | null = null;
 let hasActivated = false;
 
 const formatTime = (value?: string | null) =>
-  value && dayjs(value).isValid() ? dayjs(value).format("YYYY-MM-DD HH:mm") : "—";
+  value && dayjs(value).isValid()
+    ? dayjs(value).format("YYYY-MM-DD HH:mm")
+    : "—";
 
 /** 坐标统一保留 5 位小数（约 1 米精度），任一为空则整列显示 — */
 function formatCoord(lat?: number | null, lng?: number | null) {
@@ -163,7 +168,9 @@ function handleSizeChange(size: number) {
 function handleUrgent() {
   activeTab.value = "pending";
   handleTabChange();
-  nextTick(() => listAnchor.value?.scrollIntoView({ behavior: "smooth", block: "start" }));
+  nextTick(() =>
+    listAnchor.value?.scrollIntoView({ behavior: "smooth", block: "start" })
+  );
 }
 
 function dial(phone: string) {
@@ -259,11 +266,7 @@ onUnmounted(stopPolling);
       </template>
 
       <el-tabs v-model="activeTab" @tab-change="handleTabChange">
-        <el-tab-pane
-          v-for="tab in TABS"
-          :key="tab.value"
-          :name="tab.value"
-        >
+        <el-tab-pane v-for="tab in TABS" :key="tab.value" :name="tab.value">
           <template #label>
             <span class="inline-flex items-center gap-1">
               {{ tab.label }}
@@ -305,18 +308,25 @@ onUnmounted(stopPolling);
           row-key="id"
           empty-text="暂无救援通知"
         >
-          <el-table-column label="编号" width="70">
+          <el-table-column label="编号" width="56">
             <template #default="{ row }">
-              <span class="font-medium tabular-nums text-[var(--el-text-color-primary)]">
+              <span
+                class="font-medium tabular-nums text-[var(--el-text-color-primary)]"
+              >
                 #{{ row.id }}
               </span>
             </template>
           </el-table-column>
 
-          <el-table-column label="司机" width="124">
+          <el-table-column label="司机" width="112">
             <template #default="{ row }">
-              <div class="font-medium">{{ row.driver?.nickname || "匿名司机" }}</div>
-              <div v-if="row.driverPhone" class="mt-0.5 flex items-center gap-1">
+              <div class="font-medium">
+                {{ row.driver?.nickname || "匿名司机" }}
+              </div>
+              <div
+                v-if="row.driverPhone"
+                class="mt-0.5 flex items-center gap-1"
+              >
                 <a
                   :href="`tel:${row.driverPhone}`"
                   class="text-xs tabular-nums text-primary hover:underline"
@@ -331,13 +341,16 @@ onUnmounted(stopPolling);
                   @click="copyPhone(row.driverPhone)"
                 />
               </div>
-              <span v-else class="text-xs text-[var(--el-text-color-secondary)]">
+              <span
+                v-else
+                class="text-xs text-[var(--el-text-color-secondary)]"
+              >
                 未留电话
               </span>
             </template>
           </el-table-column>
 
-          <el-table-column label="身份" width="92">
+          <el-table-column label="身份" width="88" show-overflow-tooltip>
             <template #default="{ row }">
               <span
                 :class="
@@ -354,7 +367,7 @@ onUnmounted(stopPolling);
           <el-table-column
             prop="locationDesc"
             label="位置描述"
-            min-width="132"
+            min-width="168"
             show-overflow-tooltip
           >
             <template #default="{ row }">
@@ -370,15 +383,17 @@ onUnmounted(stopPolling);
             </template>
           </el-table-column>
 
-          <el-table-column label="坐标" width="146">
+          <el-table-column label="坐标" width="112" show-overflow-tooltip>
             <template #default="{ row }">
-              <span class="whitespace-nowrap text-xs tabular-nums text-[var(--el-text-color-regular)]">
+              <span
+                class="whitespace-nowrap text-xs tabular-nums text-[var(--el-text-color-regular)]"
+              >
                 {{ formatCoord(row.lat, row.lng) }}
               </span>
             </template>
           </el-table-column>
 
-          <el-table-column label="状态" width="84">
+          <el-table-column label="状态" width="88">
             <template #default="{ row }">
               <el-tag :type="tagType(row.status)" effect="light">
                 {{ row.statusName || ORDER_STATUS[row.status] || row.status }}
@@ -389,7 +404,7 @@ onUnmounted(stopPolling);
           <el-table-column
             prop="note"
             label="跟进备注"
-            min-width="130"
+            min-width="168"
             show-overflow-tooltip
           >
             <template #default="{ row }">
@@ -405,13 +420,11 @@ onUnmounted(stopPolling);
             </template>
           </el-table-column>
 
-          <el-table-column label="处理人" width="96" show-overflow-tooltip>
+          <el-table-column label="处理人" width="84" show-overflow-tooltip>
             <template #default="{ row }">
               <span
                 :class="
-                  row.handledBy
-                    ? ''
-                    : 'text-[var(--el-text-color-secondary)]'
+                  row.handledBy ? '' : 'text-[var(--el-text-color-secondary)]'
                 "
               >
                 {{ row.handledBy || "—" }}
@@ -419,9 +432,11 @@ onUnmounted(stopPolling);
             </template>
           </el-table-column>
 
-          <el-table-column label="时间" width="130">
+          <el-table-column label="时间" width="148">
             <template #default="{ row }">
-              <span class="whitespace-nowrap text-xs tabular-nums text-[var(--el-text-color-regular)]">
+              <span
+                class="whitespace-nowrap text-xs tabular-nums text-[var(--el-text-color-regular)]"
+              >
                 {{ formatTime(row.createdAt) }}
               </span>
             </template>
@@ -457,7 +472,7 @@ onUnmounted(stopPolling);
                       link
                       type="primary"
                       :disabled="isTerminal(row.status)"
-                      @click="openHandle(row)"
+                      @click="openHandle(asRescue(row))"
                     >
                       处理
                     </el-button>

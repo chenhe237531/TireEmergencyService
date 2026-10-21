@@ -9,10 +9,15 @@ import type { DriverItem } from "@/api/tire";
 
 defineOptions({ name: "TireDriverList" });
 
+/** el-table 插槽 row 的静态类型是 DefaultRow，统一在此断言为业务类型 */
+const asDriver = (row: unknown) => row as DriverItem;
+
 const router = useRouter();
 
 /** 身份 → 标签配色：三种身份固定色，未完善单独用灰标签 */
-const roleTag: Record<string, string> = {
+/** el-tag 的类型取值，避免字典的 string 与组件联合类型不兼容 */
+type TagType = "primary" | "success" | "warning" | "danger" | "info";
+const roleTag: Record<string, TagType> = {
   private_owner: "primary",
   fleet: "warning",
   store: "success"
@@ -47,7 +52,8 @@ const formatTime = (value?: string | null) =>
   value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "";
 
 /** 无头像时用昵称首字占位，昵称为空则退回图标 */
-const avatarLetter = (row: DriverItem) => (row.nickname || "").trim().slice(0, 1);
+const avatarLetter = (row: DriverItem) =>
+  (row.nickname || "").trim().slice(0, 1);
 
 async function getList() {
   loading.value = true;
@@ -103,9 +109,7 @@ async function loadStats() {
     if (!statsComplete.value) return;
     stats.roleFilled = rows.filter(item => !item.roleEmpty).length;
     // 近 7 天含今天，按本地自然日比较，避免时区导致把当天算到区间外
-    const since = dayjs()
-      .startOf("day")
-      .subtract(6, "day");
+    const since = dayjs().startOf("day").subtract(6, "day");
     stats.weekNew = rows.filter(
       item => item.createdAt && !dayjs(item.createdAt).isBefore(since)
     ).length;
@@ -240,8 +244,8 @@ onActivated(() => {
               :src="row.avatarUrl || undefined"
               class="bg-[var(--el-color-primary-light-8)]! font-medium text-[var(--el-color-primary)]!"
             >
-              <template v-if="avatarLetter(row)">
-                {{ avatarLetter(row) }}
+              <template v-if="avatarLetter(asDriver(row))">
+                {{ avatarLetter(asDriver(row)) }}
               </template>
               <el-icon v-else :size="18"><IconUser /></el-icon>
             </el-avatar>
@@ -267,7 +271,9 @@ onActivated(() => {
 
         <el-table-column label="身份" width="120">
           <template #default="{ row }">
-            <el-tag v-if="row.roleEmpty" type="info" effect="plain">未完善</el-tag>
+            <el-tag v-if="row.roleEmpty" type="info" effect="plain"
+              >未完善</el-tag
+            >
             <el-tag v-else :type="roleTag[row.role] || 'info'" effect="light">
               {{ row.roleName || DRIVER_ROLES[row.role] || "—" }}
             </el-tag>
@@ -276,20 +282,24 @@ onActivated(() => {
 
         <el-table-column label="注册时间" width="165">
           <template #default="{ row }">
-            <span class="text-text_color_regular">{{ formatTime(row.createdAt) }}</span>
+            <span class="text-text_color_regular">{{
+              formatTime(row.createdAt)
+            }}</span>
           </template>
         </el-table-column>
 
         <el-table-column label="最近登录" width="165">
           <template #default="{ row }">
-            <span v-if="row.lastLoginAt">{{ formatTime(row.lastLoginAt) }}</span>
+            <span v-if="row.lastLoginAt">{{
+              formatTime(row.lastLoginAt)
+            }}</span>
             <span v-else class="text-text_color_regular">从未登录</span>
           </template>
         </el-table-column>
 
         <el-table-column label="操作" width="120" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="goViewLog(row)">
+            <el-button link type="primary" @click="goViewLog(asDriver(row))">
               查看痕迹
             </el-button>
           </template>

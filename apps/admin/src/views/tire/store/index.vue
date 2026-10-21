@@ -4,14 +4,24 @@ import dayjs from "dayjs";
 import { ElMessageBox } from "element-plus";
 import IconPlus from "~icons/tabler/plus";
 import { message } from "@/utils/message";
-import { STORE_CATEGORIES, storeDelete, storeList, storeUpdate } from "@/api/tire";
+import {
+  STORE_CATEGORIES,
+  storeDelete,
+  storeList,
+  storeUpdate
+} from "@/api/tire";
 import type { StoreItem } from "@/api/tire";
 import StoreFormDialog from "./StoreFormDialog.vue";
 
 defineOptions({ name: "TireStoreList" });
 
+/** el-table 插槽 row 的静态类型是 DefaultRow，统一在此断言为业务类型 */
+const asStore = (row: unknown) => row as StoreItem;
+
 /** 分类 → el-tag 类型，同分类保持同色，方便快速扫读 */
-const categoryTag: Record<string, string> = {
+/** el-tag 的类型取值，避免字典的 string 与组件联合类型不兼容 */
+type TagType = "primary" | "success" | "warning" | "danger" | "info";
+const categoryTag: Record<string, TagType> = {
   tire_big: "warning",
   tire_small: "primary",
   tire_both: "success",
@@ -104,9 +114,15 @@ function openEdit(row: StoreItem) {
   dialogVisible.value = true;
 }
 
-/** 新增成功后回到第 1 页，保证能看到刚录入的门店（列表按 sort、id 倒序） */
-function handleSaved(mode: "create" | "edit") {
-  if (mode === "create") pagination.page = 1;
+/**
+ * 新增成功后按名称定位到新门店：列表按 sort、id 倒序，新门店默认权重 0 会落到末页，
+ * 直接回第 1 页看不到，容易被误认为没保存成功。
+ */
+function handleSaved(mode: "create" | "edit", row?: StoreItem) {
+  if (mode === "create" && row) {
+    query.keyword = row.name;
+    pagination.page = 1;
+  }
   getList();
 }
 
@@ -293,7 +309,7 @@ onActivated(() => {
               <el-switch
                 :model-value="row.status === 'active'"
                 :loading="statusLoadingId === row.id"
-                @change="val => handleToggleStatus(row, Boolean(val))"
+                @change="val => handleToggleStatus(asStore(row), Boolean(val))"
               />
               <span
                 class="text-xs"
@@ -311,18 +327,22 @@ onActivated(() => {
 
         <el-table-column label="更新时间" width="165">
           <template #default="{ row }">
-            <span class="text-text_color_regular">{{ formatTime(row.updatedAt) }}</span>
+            <span class="text-text_color_regular">{{
+              formatTime(row.updatedAt)
+            }}</span>
           </template>
         </el-table-column>
 
         <el-table-column label="操作" width="110" fixed="right">
           <template #default="{ row }">
-            <el-button link type="primary" @click="openEdit(row)">编辑</el-button>
+            <el-button link type="primary" @click="openEdit(asStore(row))"
+              >编辑</el-button
+            >
             <el-button
               link
               type="danger"
               :loading="deletingId === row.id"
-              @click="handleDelete(row)"
+              @click="handleDelete(asStore(row))"
             >
               删除
             </el-button>

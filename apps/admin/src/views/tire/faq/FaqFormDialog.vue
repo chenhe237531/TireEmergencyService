@@ -42,7 +42,8 @@ const notBlank = (label: string) => ({
     value: unknown,
     callback: (error?: Error) => void
   ) => {
-    if (!String(value ?? "").trim()) return callback(new Error(`请输入${label}`));
+    if (!String(value ?? "").trim())
+      return callback(new Error(`请输入${label}`));
     callback();
   },
   trigger: "blur"
@@ -159,7 +160,9 @@ async function handleSubmit() {
     </el-form>
 
     <template #footer>
-      <el-button :disabled="submitting" @click="visible = false">取消</el-button>
+      <el-button :disabled="submitting" @click="visible = false"
+        >取消</el-button
+      >
       <el-button type="primary" :loading="submitting" @click="handleSubmit">
         确定
       </el-button>

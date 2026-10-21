@@ -69,7 +69,9 @@ const targetOptions = computed(() => {
 const isTerminal = computed(() => targetOptions.value.length === 0);
 
 const formatTime = (value?: string | null) =>
-  value && dayjs(value).isValid() ? dayjs(value).format("YYYY-MM-DD HH:mm") : "—";
+  value && dayjs(value).isValid()
+    ? dayjs(value).format("YYYY-MM-DD HH:mm")
+    : "—";
 
 function formatCoord(lat?: number | null, lng?: number | null) {
   if (lat === null || lat === undefined || lng === null || lng === undefined) {
@@ -165,7 +167,9 @@ async function handleSubmit() {
     <div v-loading="loading" class="min-h-[240px]">
       <template v-if="detail">
         <div class="mb-4 flex flex-wrap items-center gap-2">
-          <span class="text-lg font-semibold text-[var(--el-text-color-primary)]">
+          <span
+            class="text-lg font-semibold text-[var(--el-text-color-primary)]"
+          >
             {{ detail.plateNo || "未填车牌" }}
           </span>
           <el-tag :type="tagType(detail.status)" effect="light">
@@ -176,7 +180,9 @@ async function handleSubmit() {
           </span>
         </div>
 
-        <div class="mb-2 text-sm font-medium text-[var(--el-text-color-primary)]">
+        <div
+          class="mb-2 text-sm font-medium text-[var(--el-text-color-primary)]"
+        >
           基础信息
         </div>
         <el-descriptions :column="2" border size="small" class="mb-4">
@@ -205,13 +211,19 @@ async function handleSubmit() {
             {{ detail.locationDesc || "—" }}
           </el-descriptions-item>
           <el-descriptions-item label="司机账号" :span="2">
-            <span :class="{ 'text-[var(--el-text-color-secondary)]': !detail.driver }">
+            <span
+              :class="{
+                'text-[var(--el-text-color-secondary)]': !detail.driver
+              }"
+            >
               {{ driverText }}
             </span>
           </el-descriptions-item>
         </el-descriptions>
 
-        <div class="mb-2 text-sm font-medium text-[var(--el-text-color-primary)]">
+        <div
+          class="mb-2 text-sm font-medium text-[var(--el-text-color-primary)]"
+        >
           故障描述
         </div>
         <div
@@ -220,7 +232,9 @@ async function handleSubmit() {
           {{ detail.description || "用户未填写故障描述" }}
         </div>
 
-        <div class="mb-2 text-sm font-medium text-[var(--el-text-color-primary)]">
+        <div
+          class="mb-2 text-sm font-medium text-[var(--el-text-color-primary)]"
+        >
           现场图片
           <span
             v-if="images.length"
@@ -229,7 +243,10 @@ async function handleSubmit() {
             {{ images.length }} 张
           </span>
         </div>
-        <div v-if="images.length" class="mb-4 grid grid-cols-[repeat(3,100px)] gap-2">
+        <div
+          v-if="images.length"
+          class="mb-4 grid grid-cols-[repeat(3,100px)] gap-2"
+        >
           <el-image
             v-for="(img, index) in images"
             :key="`${img}-${index}`"
@@ -250,7 +267,9 @@ async function handleSubmit() {
 
         <div class="mt-5 border-t border-[var(--el-border-color-lighter)] pt-4">
           <div class="mb-3 flex-bc">
-            <div class="text-sm font-medium text-[var(--el-text-color-primary)]">
+            <div
+              class="text-sm font-medium text-[var(--el-text-color-primary)]"
+            >
               处理记录
             </div>
             <el-button
