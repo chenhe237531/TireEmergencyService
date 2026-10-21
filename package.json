@@ -18,7 +18,8 @@
   "packageManager": "pnpm@10.33.2",
   "pnpm": {
     "overrides": {
-      "unconfig": "7.3.2"
+      "unconfig": "7.3.2",
+      "@iconify/utils": "2.3.0"
     }
   }
 }
