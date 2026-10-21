@@ -1,0 +1,1120 @@
+/**
+ * 小蚂蚁轮胎救援 · 小程序 UI 设计系统
+ *
+ * 目标：把「页面布局 / 组件样式 / 交互状态」收敛成一套可复用的类，页面只做组合，不再各写一套数值。
+ *
+ * 设计取向（面向货车司机与车主，多在路边、夜里、着急时使用）：
+ *   - 高对比：墨黑正文 + 大面积留白，橙只用于「可点」和「要紧」；
+ *   - 大触点：所有可点区域不小于 44px，主按钮 52px；
+ *   - 工业感：轮胎刻度纹、45° 警示斜纹、粗描边数字，弱化装饰性插画；
+ *   - 一套令牌：颜色 / 间距 / 圆角 / 阴影全部取自 style/index.scss，本文件不另造颜色。
+ *
+ * 约定：
+ *   1. 组件类以 t- 前缀，避免和 UnoCSS 原子类、模板自带的 .card 冲突；
+ *   2. 状态用 .is-* 修饰（is-loading / is-disabled / is-error / is-active），
+ *      与业务态解耦，页面只切 class；
+ *   3. 只写「组件自身」的样式，页面级排版仍优先 UnoCSS 原子类。
+ */
+
+/* ═══════════════════════════════════════════
+   0. 补充令牌（只新增，不覆盖 index.scss 既有变量）
+   ═══════════════════════════════════════════ */
+page {
+  /* 版心：H5 宽屏时居中，窄屏铺满 */
+  --shell-max: 480px;
+  /* 触控尺寸 */
+  --tap-min: 44px;
+  --btn-h-lg: 52px;
+  --btn-h-md: 44px;
+  --btn-h-sm: 34px;
+  /* 层级 */
+  --z-fab: 900;
+  --z-mask: 1100;
+  --z-sheet: 1110;
+  /* 动效 */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  --dur: 0.18s;
+  /* 危险 / 禁用 */
+  --disabled-bg: #eae6df;
+  --disabled-ink: #a8a199;
+}
+
+/* ═══════════════════════════════════════════
+   1. 版心与页面骨架
+   ═══════════════════════════════════════════ */
+.t-shell {
+  position: relative;
+  min-height: 100vh;
+  box-sizing: border-box;
+  background: var(--bg);
+  color: var(--ink);
+  /* 底部预留自定义 tabbar（60px）+ 安全区，避免最后一张卡被遮住 */
+  padding-bottom: calc(60px + env(safe-area-inset-bottom) + 16px);
+}
+
+/* 非 tabbar 页（登录 / 子页 / 海报）：只留安全区 */
+.t-shell--plain {
+  padding-bottom: calc(env(safe-area-inset-bottom) + 24px);
+}
+
+.t-page-pad {
+  padding-left: 16px;
+  padding-right: 16px;
+}
+
+/* H5 宽屏：居中版心 + 两侧留白，模拟手机视口 */
+/* #ifdef H5 */
+@media (min-width: 640px) {
+  page {
+    background: #efede8;
+  }
+  .t-shell {
+    max-width: var(--shell-max);
+    margin: 0 auto;
+    box-shadow:
+      0 0 0 1px rgba(38, 34, 29, 0.06),
+      0 24px 60px -30px rgba(38, 34, 29, 0.35);
+  }
+}
+/* #endif */
+
+/* 小屏（iPhone SE / 老安卓 360 宽）：整体收紧一档，不出现横向滚动 */
+@media (max-width: 360px) {
+  .t-page-pad {
+    padding-left: 12px;
+    padding-right: 12px;
+  }
+  .t-hero {
+    padding-left: 16px;
+    padding-right: 16px;
+  }
+  .t-hero__title {
+    font-size: 24px;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   2. 品牌头图（纯 CSS：渐变 + 轮胎刻度纹 + 45° 警示斜纹）
+   ═══════════════════════════════════════════ */
+.t-hero {
+  position: relative;
+  overflow: hidden;
+  padding: 28px 20px 32px;
+  color: #fff;
+  background: linear-gradient(145deg, var(--brand-bright) 0%, var(--brand) 58%, var(--brand-dark) 100%);
+  border-radius: 0 0 28px 28px;
+}
+
+/* 右下角的大轮胎：同心圆 + 刻度，纯 CSS，无需图片素材 */
+.t-hero::before {
+  content: '';
+  position: absolute;
+  right: -46px;
+  bottom: -58px;
+  width: 190px;
+  height: 190px;
+  border-radius: 50%;
+  border: 16px solid rgba(255, 255, 255, 0.14);
+  box-shadow: inset 0 0 0 14px rgba(255, 255, 255, 0.1);
+}
+
+/* 左侧 45° 警示斜纹，弱到只做质感 */
+.t-hero::after {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 0;
+  width: 58%;
+  height: 100%;
+  background-image: repeating-linear-gradient(
+    135deg,
+    rgba(255, 255, 255, 0.13) 0,
+    rgba(255, 255, 255, 0.13) 2px,
+    transparent 2px,
+    transparent 12px
+  );
+  /* 从左上向右下淡出 */
+  -webkit-mask-image: linear-gradient(120deg, rgba(0, 0, 0, 0.9), transparent 72%);
+  mask-image: linear-gradient(120deg, rgba(0, 0, 0, 0.9), transparent 72%);
+  pointer-events: none;
+}
+
+.t-hero__inner {
+  position: relative;
+  z-index: 1;
+}
+
+.t-hero__title {
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  line-height: 1.25;
+}
+
+.t-hero__sub {
+  margin-top: 8px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* 头图里的信息胶囊（如「24小时」「平台调度」） */
+.t-hero__chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 16px;
+}
+
+.t-hero__chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 28px;
+  padding: 0 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.18);
+  border: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+/* 半透明玻璃层（用于头图上的二级信息块） */
+.t-glass {
+  background: rgba(255, 255, 255, 0.16);
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-radius: 14px;
+  backdrop-filter: blur(6px);
+}
+
+/* ═══════════════════════════════════════════
+   3. 按钮：默认 / 按下 / 加载 / 禁用 / 错误四种态
+   ═══════════════════════════════════════════ */
+.t-btn {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  box-sizing: border-box;
+  height: var(--btn-h-md);
+  padding: 0 18px;
+  border: 1px solid transparent;
+  border-radius: 999px;
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1;
+  text-align: center;
+  white-space: nowrap;
+  color: var(--ink);
+  background: var(--surface);
+  transition:
+    transform var(--dur) var(--ease-out),
+    opacity var(--dur),
+    background-color var(--dur);
+}
+
+/* 按下：轻微内缩，给「真的点到了」的反馈 */
+.t-btn:active {
+  transform: scale(0.975);
+  opacity: 0.9;
+}
+
+.t-btn--block {
+  display: flex;
+  width: 100%;
+}
+
+.t-btn--lg {
+  height: var(--btn-h-lg);
+  font-size: 16px;
+  padding: 0 22px;
+}
+
+.t-btn--sm {
+  height: var(--btn-h-sm);
+  padding: 0 12px;
+  font-size: 13px;
+  font-weight: 500;
+}
+
+/* 主行动：品牌橙渐变 + 橙色投影 */
+.t-btn--primary {
+  color: var(--on-brand);
+  background: linear-gradient(135deg, var(--brand-bright), var(--brand));
+  box-shadow: 0 8px 18px -10px rgba(232, 114, 28, 0.75);
+}
+
+/* 紧急行动：救援红，语义比主按钮更重 */
+.t-btn--rescue {
+  color: #fff;
+  background: linear-gradient(135deg, #f04438, var(--alert));
+  box-shadow: 0 8px 20px -8px rgba(217, 48, 37, 0.5);
+}
+
+/* 次级：浅橙底 */
+.t-btn--soft {
+  color: var(--brand-dark);
+  background: var(--brand-soft);
+  border-color: var(--brand-line);
+}
+
+/* 描边 */
+.t-btn--ghost {
+  color: var(--ink-2);
+  background: transparent;
+  border-color: var(--line-2);
+}
+
+/* 纯文字 */
+.t-btn--text {
+  height: auto;
+  padding: 4px 6px;
+  color: var(--brand-dark);
+  background: transparent;
+  font-weight: 500;
+}
+
+/* 危险文字 */
+.t-btn--danger {
+  color: var(--alert);
+  background: var(--alert-soft);
+}
+
+/* 禁用：统一降饱和 + 去投影，且不可点 */
+.t-btn.is-disabled,
+.t-btn[disabled] {
+  color: var(--disabled-ink);
+  background: var(--disabled-bg);
+  border-color: transparent;
+  box-shadow: none;
+  transform: none;
+  pointer-events: none;
+}
+
+/* 加载：保留底色，内容降低可见度，中间叠一个转圈 */
+.t-btn.is-loading {
+  pointer-events: none;
+}
+
+.t-btn.is-loading .t-btn__label {
+  opacity: 0.28;
+}
+
+.t-btn__spin {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 18px;
+  height: 18px;
+  margin: -9px 0 0 -9px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  animation: t-spin 0.8s linear infinite;
+  opacity: 0.85;
+}
+
+@keyframes t-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+/* 兼容原始 <button> 的默认边框与字体 */
+button.t-btn {
+  margin: 0;
+  line-height: normal;
+}
+
+/* ═══════════════════════════════════════════
+   4. 卡片 / 分组 / 标题
+   ═══════════════════════════════════════════ */
+.t-card {
+  box-sizing: border-box;
+  background: var(--surface);
+  border-radius: var(--r-card);
+  box-shadow: var(--shadow-card);
+  border: 1px solid var(--line);
+}
+
+/* 可点的卡片：按下时抬起（阴影加深），而不是缩小，避免长列表跳动 */
+.t-card--tap {
+  transition:
+    transform var(--dur) var(--ease-out),
+    box-shadow var(--dur) var(--ease-out);
+}
+
+.t-card--tap:active {
+  transform: translateY(-1px);
+  box-shadow:
+    0 2px 4px rgba(38, 34, 29, 0.05),
+    0 14px 30px -16px rgba(38, 34, 29, 0.3);
+}
+
+.t-card__hd {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 16px 16px 0;
+}
+
+.t-card__bd {
+  padding: 16px;
+}
+
+.t-section-title {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+/* 标题左侧的品牌短竖条 */
+.t-section-title::before {
+  content: '';
+  width: 4px;
+  height: 16px;
+  border-radius: 2px;
+  background: var(--brand);
+}
+
+.t-muted {
+  color: var(--ink-3);
+}
+
+.t-hint {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+.t-divider {
+  height: 1px;
+  background: var(--line);
+}
+
+/* ═══════════════════════════════════════════
+   5. 标签 / 徽标 / 评分
+   ═══════════════════════════════════════════ */
+.t-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  height: 22px;
+  padding: 0 8px;
+  border-radius: var(--r-tag);
+  font-size: 11px;
+  line-height: 1;
+  color: var(--ink-2);
+  background: var(--placeholder);
+}
+
+.t-tag--brand {
+  color: var(--brand-dark);
+  background: var(--brand-soft);
+}
+
+.t-tag--care {
+  color: var(--care);
+  background: var(--care-soft);
+}
+
+.t-tag--alert {
+  color: var(--alert);
+  background: var(--alert-soft);
+}
+
+.t-badge {
+  display: inline-flex;
+  align-items: center;
+  height: 20px;
+  padding: 0 6px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--brand-dark);
+  background: var(--brand-soft);
+}
+
+/* 评分：橙色星 + 数字，数字用等宽感更强的大字 */
+.t-score {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--brand-dark);
+}
+
+.t-score__star {
+  color: var(--star);
+}
+
+.t-score--empty {
+  color: var(--ink-3);
+  font-weight: 500;
+}
+
+/* ═══════════════════════════════════════════
+   6. 表单：默认 / 聚焦 / 错误 / 只读 / 禁用
+   ═══════════════════════════════════════════ */
+.t-field {
+  padding: 14px 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.t-field:last-child {
+  border-bottom: none;
+}
+
+.t-field__hd {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.t-label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink-2);
+}
+
+/* 必填星号 */
+.t-label--req::after {
+  content: '*';
+  margin-left: 2px;
+  color: var(--alert);
+  font-weight: 700;
+}
+
+.t-input,
+.t-textarea {
+  box-sizing: border-box;
+  width: 100%;
+  padding: 12px 14px;
+  border: 1px solid var(--line-2);
+  border-radius: var(--r-inner);
+  font-size: 15px;
+  color: var(--ink);
+  background: #fbfaf8;
+  transition:
+    border-color var(--dur),
+    background-color var(--dur),
+    box-shadow var(--dur);
+}
+
+.t-textarea {
+  min-height: 104px;
+  line-height: 1.65;
+}
+
+/* 聚焦：橙色描边 + 极浅光晕，不用更粗的边框以免跳动 */
+.t-input.is-focus,
+.t-textarea.is-focus {
+  border-color: var(--brand);
+  background: #fff;
+  box-shadow: 0 0 0 3px rgba(232, 114, 28, 0.12);
+}
+
+/* 错误：红边 + 红底；错误文案紧贴字段下方 */
+.t-input.is-error,
+.t-textarea.is-error {
+  border-color: var(--alert);
+  background: #fffafa;
+  box-shadow: 0 0 0 3px rgba(217, 48, 37, 0.08);
+}
+
+.t-field__err {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--alert);
+}
+
+/* 提交时字段缺失：整块抖一下（只在错误态首次出现时播放一次） */
+.t-shake {
+  animation: t-shake 0.32s var(--ease-out);
+}
+
+@keyframes t-shake {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  20% {
+    transform: translateX(-5px);
+  }
+  40% {
+    transform: translateX(4px);
+  }
+  60% {
+    transform: translateX(-3px);
+  }
+  80% {
+    transform: translateX(2px);
+  }
+}
+
+/* 占位符统一颜色（各端 selector 不同，一次写全） */
+.t-input::placeholder,
+.t-textarea::placeholder {
+  color: #b3aca2;
+}
+
+/* 字段右侧的小操作（如「获取定位」） */
+.t-field__aside {
+  flex-shrink: 0;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--brand-dark);
+}
+
+/* 只读摘要行（如「已定位：xx」） */
+.t-readout {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: var(--r-inner);
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+.t-readout--muted {
+  background: var(--placeholder);
+  color: var(--ink-2);
+}
+
+.t-readout--error {
+  background: var(--alert-soft);
+  color: var(--alert);
+}
+
+/* ═══════════════════════════════════════════
+   7. 列表单元（我的页菜单 / 设置项）
+   ═══════════════════════════════════════════ */
+.t-cell-group {
+  overflow: hidden;
+  background: var(--surface);
+  border-radius: var(--r-card);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-card);
+}
+
+.t-cell {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  box-sizing: border-box;
+  min-height: 54px;
+  padding: 12px 16px;
+  transition: background-color var(--dur);
+}
+
+.t-cell + .t-cell::before {
+  content: '';
+  position: absolute;
+  left: 16px;
+  right: 0;
+  top: 0;
+  height: 1px;
+  background: var(--line);
+}
+
+.t-cell:active {
+  background: #faf8f5;
+}
+
+.t-cell__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 30px;
+  height: 30px;
+  flex-shrink: 0;
+  border-radius: 9px;
+  font-size: 17px;
+  color: var(--brand-dark);
+  background: var(--brand-soft);
+}
+
+.t-cell__title {
+  flex: 1;
+  min-width: 0;
+  font-size: 15px;
+  color: var(--ink);
+}
+
+.t-cell__value {
+  max-width: 52%;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+
+.t-cell__arrow {
+  color: #c4bdb3;
+  font-size: 16px;
+}
+
+/* ═══════════════════════════════════════════
+   8. 状态：骨架屏 / 加载 / 空 / 错误
+   ═══════════════════════════════════════════ */
+.t-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 40px 24px;
+  text-align: center;
+}
+
+.t-state__ico {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  font-size: 28px;
+  color: var(--ink-3);
+  background: var(--placeholder);
+}
+
+.t-state__ico--error {
+  color: var(--alert);
+  background: var(--alert-soft);
+}
+
+.t-state__title {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+}
+
+.t-state__desc {
+  max-width: 260px;
+  font-size: 12px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
+
+/* 骨架屏：底色块 + 高光扫过，避免整页白屏 */
+.t-sk {
+  position: relative;
+  overflow: hidden;
+  background: #ece8e1;
+  border-radius: 8px;
+}
+
+.t-sk::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  transform: translateX(-100%);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.65), transparent);
+  animation: t-sk-sweep 1.25s infinite;
+}
+
+@keyframes t-sk-sweep {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
+/* 顶部细进度条（切分类 / 下拉刷新时的轻量加载提示） */
+.t-loadbar {
+  position: relative;
+  height: 2px;
+  overflow: hidden;
+  background: var(--brand-soft);
+}
+
+.t-loadbar::after {
+  content: '';
+  position: absolute;
+  left: -40%;
+  top: 0;
+  width: 40%;
+  height: 100%;
+  border-radius: 2px;
+  background: var(--brand);
+  animation: t-loadbar 1.1s var(--ease-out) infinite;
+}
+
+@keyframes t-loadbar {
+  100% {
+    left: 100%;
+  }
+}
+
+/* 行内加载（小转圈 + 文字） */
+.t-inline-loading {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  color: var(--ink-3);
+}
+
+.t-inline-loading__dot {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--brand);
+  border-right-color: transparent;
+  animation: t-spin 0.8s linear infinite;
+}
+
+/* ═══════════════════════════════════════════
+   9. 悬浮救援按钮（首页右下角）
+   ═══════════════════════════════════════════ */
+.t-fab {
+  position: fixed;
+  right: 16px;
+  bottom: calc(60px + env(safe-area-inset-bottom) + 18px);
+  z-index: var(--z-fab);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  height: 54px;
+  padding: 0 20px;
+  border-radius: 999px;
+  color: #fff;
+  font-size: 16px;
+  font-weight: 800;
+  letter-spacing: 0.5px;
+  background: linear-gradient(135deg, #f04438, var(--alert));
+  box-shadow:
+    0 10px 24px -8px rgba(217, 48, 37, 0.62),
+    0 2px 6px rgba(38, 34, 29, 0.12);
+  transition: transform var(--dur) var(--ease-out);
+}
+
+.t-fab:active {
+  transform: scale(0.96);
+}
+
+/* 呼吸光圈：让紧急入口在静止页面上也能被注意到 */
+.t-fab::after {
+  content: '';
+  position: absolute;
+  inset: -2px;
+  border-radius: 999px;
+  border: 2px solid rgba(240, 68, 56, 0.45);
+  animation: t-pulse 2.4s var(--ease-out) infinite;
+  pointer-events: none;
+}
+
+@keyframes t-pulse {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  70% {
+    transform: scale(1.12);
+    opacity: 0;
+  }
+  100% {
+    transform: scale(1.12);
+    opacity: 0;
+  }
+}
+
+/* ═══════════════════════════════════════════
+   10. 底部弹层（可输入的位置补充 / 绑手机号）
+   ═══════════════════════════════════════════ */
+.t-mask {
+  position: fixed;
+  inset: 0;
+  z-index: var(--z-mask);
+  background: rgba(24, 21, 18, 0.45);
+  animation: t-fade-in var(--dur) var(--ease-out);
+}
+
+.t-sheet {
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: var(--z-sheet);
+  box-sizing: border-box;
+  max-height: 82vh;
+  overflow-y: auto;
+  padding: 8px 20px calc(20px + env(safe-area-inset-bottom));
+  background: var(--surface);
+  border-radius: 20px 20px 0 0;
+  animation: t-slide-up 0.24s var(--ease-out);
+}
+
+/* H5 宽屏时弹层跟随版心宽度 */
+/* #ifdef H5 */
+@media (min-width: 640px) {
+  .t-sheet {
+    left: 50%;
+    right: auto;
+    width: var(--shell-max);
+    transform: translateX(-50%);
+    border-radius: 20px 20px 0 0;
+  }
+}
+/* #endif */
+
+.t-sheet__grab {
+  width: 40px;
+  height: 4px;
+  margin: 0 auto 12px;
+  border-radius: 2px;
+  background: var(--line-2);
+}
+
+.t-sheet__title {
+  font-size: 17px;
+  font-weight: 700;
+  color: var(--ink);
+}
+
+.t-sheet__desc {
+  margin-top: 6px;
+  font-size: 13px;
+  line-height: 1.6;
+  color: var(--ink-3);
+}
+
+.t-sheet__body {
+  margin-top: 16px;
+}
+
+.t-sheet__ft {
+  display: flex;
+  gap: 10px;
+  margin-top: 20px;
+}
+
+.t-sheet__ft .t-btn {
+  flex: 1;
+}
+
+@keyframes t-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+@keyframes t-slide-up {
+  from {
+    transform: translateY(100%);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+
+/* 宽屏下 sheet 也需要从底部滑入，覆盖上面的 translateX */
+/* #ifdef H5 */
+@media (min-width: 640px) {
+  .t-sheet {
+    animation: t-slide-up-wide 0.24s var(--ease-out);
+  }
+  @keyframes t-slide-up-wide {
+    from {
+      transform: translate(-50%, 100%);
+    }
+    to {
+      transform: translate(-50%, 0);
+    }
+  }
+}
+/* #endif */
+
+/* ═══════════════════════════════════════════
+   11. 选择类控件：身份卡 / 分类块 / 复选
+   ═══════════════════════════════════════════ */
+.t-choice {
+  position: relative;
+  box-sizing: border-box;
+  border: 1.5px solid var(--line-2);
+  border-radius: var(--r-card);
+  background: var(--surface);
+  transition:
+    border-color var(--dur),
+    background-color var(--dur),
+    box-shadow var(--dur);
+}
+
+/* 选中：品牌描边 + 浅橙底 + 右上角勾 */
+.t-choice.is-active {
+  border-color: var(--brand);
+  background: var(--brand-soft);
+  box-shadow: 0 0 0 3px rgba(232, 114, 28, 0.1);
+}
+
+.t-choice.is-disabled {
+  opacity: 0.5;
+  pointer-events: none;
+}
+
+.t-choice:active {
+  background: #fdf7f1;
+}
+
+.t-choice__tick {
+  position: absolute;
+  right: 10px;
+  top: 10px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  font-size: 13px;
+  color: #fff;
+  background: var(--brand);
+}
+
+/* 复选框：未选空心、选中实心橙 + 勾 */
+.t-check {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+
+.t-check__box {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 18px;
+  height: 18px;
+  margin-top: 1px;
+  border-radius: 5px;
+  border: 1.5px solid #c9c2b8;
+  background: #fff;
+  color: #fff;
+  font-size: 12px;
+  transition:
+    background-color var(--dur),
+    border-color var(--dur);
+}
+
+.t-check__box.is-on {
+  border-color: var(--brand);
+  background: var(--brand);
+}
+
+/* 未勾选就提交：整行描红并轻抖 */
+.t-check.is-error .t-check__box {
+  border-color: var(--alert);
+  animation: t-shake 0.32s var(--ease-out);
+}
+
+.t-link {
+  color: var(--brand-dark);
+  text-decoration: underline;
+}
+
+/* ═══════════════════════════════════════════
+   12. 图片九宫格（上传 / 预览 / 上传中 / 删除）
+   ═══════════════════════════════════════════ */
+.t-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.t-photo {
+  position: relative;
+  width: 88px;
+  height: 88px;
+  overflow: hidden;
+  border-radius: var(--r-inner);
+  background: var(--placeholder);
+}
+
+.t-photo__img {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.t-photo__del {
+  position: absolute;
+  right: 3px;
+  top: 3px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  color: #fff;
+  font-size: 13px;
+  background: rgba(24, 21, 18, 0.6);
+}
+
+/* 上传中的遮罩：进度不明时用转圈，避免假进度条 */
+.t-photo__mask {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(24, 21, 18, 0.42);
+}
+
+.t-photo__spin {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.85);
+  border-right-color: transparent;
+  animation: t-spin 0.8s linear infinite;
+}
+
+.t-photo--add {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  color: var(--ink-3);
+  font-size: 11px;
+  background: #fbfaf8;
+  border: 1px dashed var(--line-2);
+  box-sizing: border-box;
+}
+
+.t-photo--add:active {
+  background: var(--placeholder);
+}
+
+/* 小屏（360 宽）时缩到 76px，三列仍能放下 */
+@media (max-width: 360px) {
+  .t-photo {
+    width: 76px;
+    height: 76px;
+  }
+}
