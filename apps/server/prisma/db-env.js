@@ -3,7 +3,7 @@
  *
  * DB_PROVIDER=sqlite | mysql，未设置时按 DATABASE_URL 推断（mysql:// 开头即 MySQL），都没有则默认 SQLite。
  * MySQL 连接串优先用 DATABASE_URL；没有时用微信云托管注入的 MYSQL_ADDRESS / MYSQL_USERNAME / MYSQL_PASSWORD 拼接，
- * 库名取 MYSQL_DATABASE（默认 xueji）。
+ * 库名取 MYSQL_DATABASE（默认 tire）。
  *
  * 供 prisma/db.js（命令行）与 PrismaService（运行时）共用，保持纯 CommonJS 以便 ts-node 与编译产物都能直接 require。
  */

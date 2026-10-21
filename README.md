@@ -1,124 +1,146 @@
-# 雪姬美业 · 六维健康平台（黑客松 MVP）
+# 小蚂蚁 · 轮胎紧急救援与维修服务平台
 
-面向雪姬美业客户（以乐龄女性为主）的健康美学平台：六维测评、免费体检与合作医院转介、个性化门店养护方案、健康档案、会员分级权益与魔镜 AI 陪伴。
+面向货车、轿车司机的轮胎应急救援平台：司机在小程序里提交救援或咨询需求，平台客服第一时间电话联系，协调附近的轮胎店、修理厂、救援车队线下补胎换胎与拖车。**平台只做信息对接与人工调度，不参与线上交易**，服务费用由司机与门店现场确认、线下支付。
 
-- 产品设计：[docs/01_产品设计与开发文档_v1.0（原始稿）.md](docs/01_产品设计与开发文档_v1.0（原始稿）.md)
-- 本次迭代、演示指南与部署：[docs/02_产品设计与开发文档_v1.1（黑客松MVP迭代）.md](docs/02_产品设计与开发文档_v1.1（黑客松MVP迭代）.md)
+## 业务闭环
 
-## 门店数据
+```
+司机提交需求（故障找救援 / 救援咨询）
+        ↓
+平台客服收到通知，电话核实故障与位置
+        ↓
+客服协调就近合作门店（大车轮胎 / 小车轮胎 / 修理厂 / 拖车）
+        ↓
+门店线下服务，司机与门店现场确认价格并结算
+        ↓
+后台更新工单状态：待处理 → 跟进中 → 已解决 / 已取消
+```
 
-试点门店为 **雪姬AI智能健康美容体验馆（五月花店）**：门店资料与项目价格取自美团公开团购信息，门店纸质《健康档案表（女）》已数字化为管理端录入表单；鹰眼评估设备在合规审核前不接入。客户真实报告与个人信息不进入代码和演示数据。详见迭代文档第 2 章。
+门店的电话与详细地址只在后台可见，端上仅展示门店名称、分类、主营项目、评分和模糊区域（如「郑东新区 · 距您 1.5km」），由客服统一对接，避免信息泄露和随意报价。
 
 ## 组成
 
-| 目录 | 说明 | 框架 |
+| 目录 | 说明 | 技术栈 |
 |---|---|---|
-| `apps/miniapp` | 用户端：微信小程序 + H5 演示版 | [unibest](https://github.com/feige996/unibest)（uni-app + Vue3 + TS） |
-| `apps/admin` | 管理端 + 医院端 + 顾问移动工作台 | [pure-admin-thin](https://github.com/pure-admin/pure-admin-thin)（Vue3 + Element Plus） |
-| `apps/server` | API + 规则引擎 + AI 网关 | NestJS + Prisma（本地 SQLite / 云上 MySQL） |
-| `deploy` | 构建、上传脚本，Docker 运行配置 | Docker Compose，可选 Nginx |
+| `apps/miniapp` | 司机端：微信小程序 + H5 演示版 | [unibest](https://github.com/feige996/unibest)（uni-app + Vue3 + TS + UnoCSS） |
+| `apps/admin` | 平台运营后台：工作台、门店、救援通知、咨询工单、司机、浏览痕迹、平台设置、FAQ | [pure-admin-thin](https://github.com/pure-admin/pure-admin-thin)（Vue3 + Element Plus + ECharts） |
+| `apps/server` | API + 业务规则 + JWT 鉴权，同时托管前端静态资源 | NestJS 11 + Prisma 6 |
+| `deploy` | 构建、上传、运行脚本，Docker Compose 与 Nginx 配置 | Docker / Shell |
+| `issues` | 前后端任务的拆分与验收说明（多 Agent 并行开发用） | Markdown |
+
+## 功能
+
+### 司机端（小程序）
+
+- **首页**：附近门店列表，支持按距离排序，覆盖 6 个分类——大车轮胎店、小车轮胎店、轮胎店（大小车）、大车修理厂、小车修理厂、救援拖车。
+- **故障找救援**：一键上报当前位置与故障情况，后台实时弹窗提醒并计入未读。
+- **救援咨询**：填写车牌、车型、位置、故障描述、现场照片与联系人，提交后由客服跟进。
+- **我的**：微信授权登录（同设备演示登录）、个人资料与身份（私人车主 / 车队 / 服务门店）。
+- **浏览痕迹**：门店的浏览与点击行为回流后台，用于分析需求分布。
+
+### 运营后台
+
+- **工作台**：今日新增工单、待处理救援、门店数量、司机增长等核心指标。
+- **门店管理**：录入门店名称、分类、主营项目、坐标、评分、模糊区域名与排序权重，支持隐藏 / 展示。
+- **救援通知**：未读数轮询、状态流转（受状态机约束，防止随意跳转）、跟进备注与处理人记录。
+- **咨询工单**：列表、详情、状态更新，图片与联系方式查看。
+- **司机管理**：司机列表、身份与状态（正常 / 封禁）。
+- **平台设置**：客服电话、关于我们、用户协议、隐私政策、分享文案等，端上读取同一份配置。
+- **常见问题**：FAQ 增删改查与排序。
+
+> 当前进度：后端 API 与数据模型、后台 A1-A5（工作台 / 门店 / 救援通知 / 咨询工单 / 司机与痕迹 / 设置与 FAQ）、小程序 M1-M5（登录 / 首页 / 救援咨询 / 我的 / 分享海报与整体 UI）均已完成并合入 `main`。
 
 ## 本地运行
 
-需要 Node.js 20+ 与 pnpm 9+。
+需要 Node.js 20+ 与 pnpm 10+。
 
 ```bash
 pnpm install
+pnpm db:reset     # 建库 + 写入演示数据（管理员、10 家门店、演示工单、FAQ、平台设置）
+pnpm dev:server   # API：http://localhost:3100/api/v1
+pnpm dev:admin    # 后台：http://localhost:8850
+pnpm dev:h5       # 小程序 H5 版：http://localhost:9100
 ```
 
-```bash
-pnpm db:reset
+微信小程序：`pnpm dev:mp`，用微信开发者工具导入 `apps/miniapp/dist/dev/mp-weixin`。
+
+**演示账号**
+
+| 端 | 账号 | 说明 |
+|---|---|---|
+| 后台 | `admin` / `admin123` | 超级管理员 |
+| 后台 | `ops` / `ops123456` | 平台运营 |
+| 小程序 | 直接点「演示登录」 | 同一设备标识对应同一司机；配置微信 AppID 后走真实 `code2Session` |
+
+后端环境变量放在 `apps/server/.env`（可从 `apps/server/.env.example` 复制）：`DATABASE_URL`、`PORT`（默认 3100）、`JWT_SECRET`、可选的 `WX_APPID` / `WX_SECRET`。生产环境务必设置随机 `JWT_SECRET`，否则会退回演示默认密钥。
+
+`pnpm db:reset` 会删除并重建本地 SQLite 演示库 `apps/server/prisma/tire.db`，仅用于开发环境。
+
+## 接口约定
+
+统一前缀 `/api/v1`，统一响应包裹：
+
+```json
+{ "code": 0, "message": "ok", "data": {} }
 ```
 
-```bash
-pnpm dev:server
-```
+业务异常同样返回 HTTP 200，用 `code` 区分（`40001` 未登录、`40003` 无权限、`40010` 需授权、`40011` 需绑定手机号、`40020` 参数错误、`40400` 不存在、`40900` 状态已变化）。令牌放在 `Authorization: Bearer <token>`，司机端（`aud=app`）与后台（`aud=admin`）令牌互不通用。
 
-```bash
-pnpm dev:admin
-```
+主要接口：
 
-```bash
-pnpm dev:h5
-```
+- 司机端：`POST /auth/login`、`POST /auth/phone`、`GET|PATCH /profile`、`GET /stores`、`POST /view-log`、`POST /rescue-alert`、`POST /consult`、`GET /settings`、`GET /faqs`、`POST /upload`
+- 后台：`POST /admin/auth/login`、`GET /admin/dashboard/stats`、`/admin/stores`、`/admin/rescue-alerts`、`/admin/consults`、`/admin/drivers`、`/admin/view-logs`、`/admin/settings`、`/admin/faqs`（列表 + 增删改，工单类含状态流转接口）
 
-- API：http://localhost:3000/api/v1
-- 管理端 / 医院端：http://localhost:8848（登录页可点击演示账号，密码均为 `123456`）
-- 小程序 H5 版：http://localhost:9000（登录页可选择演示客户）
-- 微信小程序：`pnpm dev:mp`，用微信开发者工具导入 `apps/miniapp/dist/dev/mp-weixin`
+## 数据模型
 
-`pnpm db:reset` 会删除并重建本地 SQLite 演示库 `apps/server/prisma/xueji.db`，只用于开发环境。
+`apps/server/prisma/schema.prisma` 是唯一的数据模型源，共 9 张表：
 
-## 数据库开关：SQLite / MySQL
+| 模型 | 说明 |
+|---|---|
+| `Staff` | 后台员工，账号密码登录，角色 `super_admin` / `ops` |
+| `Driver` | 司机，微信 openid 首次登录自动创建，身份 `private_owner` / `fleet` / `store` |
+| `Store` | 门店，6 类分类、坐标、评分、模糊区域名与排序权重，地址与电话不下发端上 |
+| `RescueAlert` | 故障找救援工单，状态 `pending` → `contacting` → `resolved` / `cancelled` |
+| `ConsultRequest` | 救援咨询工单，含车辆、位置、描述与现场图片 |
+| `ViewLog` | 门店浏览 / 点击痕迹 |
+| `Faq` | 常见问题与排序 |
+| `Setting` | 平台配置（客服电话、关于我们、协议、分享文案） |
+| `UploadFile` | 上传文件存数据库，访问路径 `/uploads/<文件名>` |
 
-用环境变量 `DB_PROVIDER` 切换（`apps/server/.env` 或容器环境变量），默认 `sqlite`：
+## 数据库：SQLite / MySQL
 
-| | 本地开发（默认） | 微信云托管 |
+用环境变量 `DB_PROVIDER` 切换，默认 `sqlite`：
+
+| | 本地开发（默认） | 容器 / 云托管 |
 |---|---|---|
 | `DB_PROVIDER` | `sqlite` | `mysql` |
-| 连接 | `DATABASE_URL=file:./xueji.db` | `DATABASE_URL=mysql://用户:密码@地址:3306/库名`，或直接使用云托管注入的 `MYSQL_ADDRESS` / `MYSQL_USERNAME` / `MYSQL_PASSWORD`（库名 `MYSQL_DATABASE`，默认 `xueji`） |
+| 连接 | `DATABASE_URL=file:./tire.db` | `DATABASE_URL=mysql://用户:密码@地址:3306/库名`，或使用 `MYSQL_ADDRESS` / `MYSQL_USERNAME` / `MYSQL_PASSWORD`（库名 `MYSQL_DATABASE`，默认 `tire`） |
 
-- `apps/server/prisma/schema.prisma` 是唯一的数据模型源。MySQL 版 `schema.mysql.prisma` 由 `prisma/db.js` 自动生成（不入库）：替换 provider，并给带 `// mysql: @db.Text` 标记的字段加上 `TEXT` 类型。新增长文本字段（说明、备注、正文、URL 等可能超过 191 个字符的字段）时记得加这个标记。
-- 数据库相关命令都经过 `prisma/db.js`，会按开关选 schema；已生成的 Prisma Client 与当前 schema 或开关不一致时自动重新生成：`pnpm --filter xueji-server prisma:generate | db:push | db:seed | db:init | db:reset | db:sync-config`。
-- 本地切到 MySQL：在 `apps/server/.env` 写 `DB_PROVIDER=mysql` 和 MySQL 的 `DATABASE_URL`，先 `pnpm --filter xueji-server db:init`（建表，空库时写入演示数据），再 `pnpm dev:server`。
-- 容器启动时执行 `db:init`（同步表结构，库为空时写入演示数据）。VPS 镜像（`deploy/Dockerfile`）默认 SQLite；构建参数 `--build-arg DB_PROVIDER=mysql` 预先生成 MySQL 版 Client，也可以只在运行时设置 `DB_PROVIDER=mysql`（启动时多花几秒重新生成）。
-- MySQL 需 8.0+，库建议 `CHARACTER SET utf8mb4`。MySQL 默认排序规则不区分大小写，`username` 等唯一字段按不区分大小写比较。
+- MySQL 版 `schema.mysql.prisma` 由 `prisma/db.js` 自动生成（不入库）：替换 provider，并给带 `// mysql: @db.Text` 标记的字段补上 `TEXT`。新增长文本字段（描述、备注、协议正文、URL 等可能超过 191 字符的字段）时记得加这个标记。
+- 数据库命令统一走 `prisma/db.js`，会按开关选 schema，并在 Prisma Client 与当前 schema 不一致时自动重新生成：`pnpm --filter tire-server prisma:generate | db:push | db:seed | db:init | db:reset`。
+- 本地切 MySQL：在 `apps/server/.env` 写 `DB_PROVIDER=mysql` 和 MySQL 的 `DATABASE_URL`，先 `pnpm --filter tire-server db:init`（建表，空库写入演示数据），再 `pnpm dev:server`。
+- MySQL 需 8.0+，库建议 `CHARACTER SET utf8mb4`；默认排序规则不区分大小写，`username`、`openid` 等唯一字段按不区分大小写比较。
 
-## 部署到 VPS
+## 部署
+
+**根目录 `Dockerfile`（云托管 / 通用容器）**：构建 API + 后台 + 小程序 H5，默认 `DB_PROVIDER=mysql`、`PORT=80`。启动时先同步表结构（多实例用 MySQL `GET_LOCK` 串行），库为空时写入演示数据，再拉起 API。访问 `/` 为后台、`/h5/` 为小程序 H5 版、`/api/v1` 为接口。`container.config.json` 用于云托管模板部署的初始配置，服务建好后以控制台设置为准。
+
+**`deploy/Dockerfile`（VPS + SQLite）**：前端在本地构建后随部署包上传，镜像内只装 API 依赖；SQLite 数据落在 `/data` 卷，默认端口 3000，以非 root 用户（uid 10001）运行。
+
+一键部署：
 
 ```bash
-deploy/deploy.sh root@<服务器地址>
+APP_DIR=/opt/tire deploy/deploy.sh root@<服务器地址> [ssh 端口]
 ```
 
-本地构建前端后上传，在 VPS 上用 Docker Compose 构建并运行（`restart: unless-stopped`，开机自启）。部署后访问 `http://<服务器地址>:3000/`（管理端）与 `http://<服务器地址>:3000/h5/`（小程序 H5 版）。详见迭代文档第 9 章。
+脚本会本地构建前端 → 打包上传 → 远端 `docker compose up -d --build`。部署后访问 `http://<服务器地址>:3000/`（后台）与 `http://<服务器地址>:3000/h5/`（小程序 H5 版）。
 
-## 部署到微信云托管
+> 注意：`deploy/` 下的脚本与根 `Dockerfile` 里的包名、镜像名、数据库文件名仍沿用项目初始化时的旧命名，首次部署前请统一改为 `tire-*` / `tire.db`，避免 `pnpm --filter` 找不到包。
 
-云托管直接从代码仓库构建根目录的 [`Dockerfile`](Dockerfile)（在云端构建 API、管理端和小程序 H5 版，默认连接云托管 MySQL）。VPS 部署用的 `deploy/Dockerfile` 不受影响。
+## 小程序接入真实微信登录
 
-1. **开通 MySQL**：选 MySQL 8.0，管理员用户 `root`，设置强密码。不用手动建库，服务首次启动会自动建库、建表并写入演示数据。
-2. **新建服务**，从代码仓库部署：
-   - Dockerfile 路径填 `Dockerfile`，目标目录留空（仓库根目录）
-   - 端口填 `80`（与镜像内的 `PORT` 一致，填错会被判定为部署失败）
-   - 最小实例数建议设为 1：定时任务（预警超时升级等）在进程内运行，缩到 0 时不会执行；冷启动还要同步表结构，耗时较长
-3. **服务设置 → 环境变量**：
+在 `apps/miniapp/env/.env`（或构建时环境变量）填写小程序 AppID，并在 `apps/server/.env` 配置 `WX_APPID` / `WX_SECRET` 启用 `code2Session`；不配置时使用演示登录（`code` 即设备标识），便于本地联调。
 
-   | 变量 | 说明 |
-   |---|---|
-   | `DB_PROVIDER` | `mysql`（镜像默认值，可不填） |
-   | `MYSQL_ADDRESS` | MySQL 内网地址，`host:port`，在控制台 MySQL 页面查看 |
-   | `MYSQL_USERNAME` / `MYSQL_PASSWORD` | 数据库账号密码（模板部署会自动注入，手动建服务需自己填） |
-   | `MYSQL_DATABASE` | 库名，默认 `xueji` |
-   | `JWT_SECRET` | **必填**，随机长字符串；不填会使用演示默认密钥，令牌可被伪造 |
-   | `AI_BASE_URL` / `AI_API_KEY` / `AI_MODEL` | 可选，也可以在管理端"系统管理 - AI 参数"里配置 |
-
-   也可以直接填 `DATABASE_URL=mysql://用户:密码@地址/库名`，优先于上面的 `MYSQL_*`。
-4. **访问**：服务的公网访问域名下，`/` 为管理端，`/h5/` 为小程序 H5 版，`/api/v1` 为接口。
-
-不连代码仓库、改用「手动上传代码包」时，用 `deploy/cloudrun-zip.sh` 打包（生成 `deploy/.bundle/xueji-cloudrun.zip`，Dockerfile 在压缩包根目录，已排除 node_modules、dist、本地数据库与 `apps/server/.env`），上传方式选「压缩包」，目标目录留空，Dockerfile 选「有」。
-
-[`container.config.json`](container.config.json) 只在"通过模板部署"时用于生成服务设置初始值，之后修改请到控制台。
-
-### 云托管下的数据与多实例
-
-- **上传文件存数据库**（`UploadFile` 表），访问路径仍是 `/uploads/<文件名>`。容器本地磁盘在重新部署、扩缩容时会丢失，所以不存磁盘；VPS 上早期存在 `data/uploads` 的旧文件继续可访问。
-- **多实例安全**：容器启动执行 `db:init` 时用 MySQL `GET_LOCK` 串行，多个实例同时启动不会重复写入演示数据；定时任务里的预警升级用条件更新抢占，不会重复通知。
-- 演示副本可见性有 5 秒进程内缓存，多实例时管理端最多延迟几秒显示新的演示访客数据。
-
-### 小程序接入云托管
-
-在 `apps/miniapp/env/.env.production`（或构建时的环境变量）填写：
-
-```
-VITE_WX_CLOUD_ENV = '云托管环境 ID'
-VITE_WX_CLOUD_SERVICE = '服务名称'
-VITE_MP_SERVER_BASEURL = 'https://<服务公网访问域名>/api/v1'
-```
-
-- 两个 `VITE_WX_CLOUD_*` 都填写后，小程序接口改走 `wx.cloud.callContainer`（走微信内网，不需要配置 request 合法域名，也不需要备案域名）。需要先在云托管控制台把小程序与云托管环境关联。
-- `VITE_MP_SERVER_BASEURL` 用于把 `/uploads/...` 等相对路径图片拼成完整地址（`image` 组件加载网络图片不受合法域名限制）。
-- 不填 `VITE_WX_CLOUD_*` 时，仍按 `VITE_MP_SERVER_BASEURL` 发 HTTPS 请求（需备案域名 + 合法域名配置）。H5 版与接口同域部署，不受影响。
-
-## 大模型（可选）
-
-管理端"系统管理 - AI 参数"填写任一 OpenAI 兼容服务（Base URL、模型、API Key）。未配置时，方案文案、魔镜对话等全部使用模板，功能完整可用。
+- 小程序接口地址：`VITE_MP_SERVER_BASEURL`，生产环境需 HTTPS 且在微信后台配置 request 合法域名。
+- H5 版与接口同域部署，走相对路径，不受合法域名限制。
+- 真机预览时把接口地址改为电脑局域网 IP，手机需与电脑在同一 Wi-Fi。

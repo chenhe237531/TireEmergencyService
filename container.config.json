@@ -10,12 +10,12 @@
   "policyThreshold": 80,
   "envParams": {
     "DB_PROVIDER": "mysql",
-    "MYSQL_DATABASE": "xueji"
+    "MYSQL_DATABASE": "tire"
   },
   "customLogs": "stdout",
   "initialDelaySeconds": 10,
-  "dataBaseName": "xueji",
+  "dataBaseName": "tire",
   "executeSQLs": [
-    "CREATE DATABASE IF NOT EXISTS xueji DEFAULT CHARACTER SET utf8mb4;"
+    "CREATE DATABASE IF NOT EXISTS tire DEFAULT CHARACTER SET utf8mb4;"
   ]
 }

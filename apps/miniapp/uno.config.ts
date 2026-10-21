@@ -28,6 +28,14 @@ export default defineConfig({
         'vertical-align': 'middle',
       },
       collections: {
+        /**
+         * tabler 图标集（i-tabler-*）：显式从本地 @iconify-json 包加载。
+         *
+         * preset-icons 默认走 Iconify 的远程/CDN loader，离线或受限网络下会
+         * 逐个报 `failed to load icon "tabler-xxx"` 并产出空样式；
+         * 显式注册后直接读本地 JSON，构建结果稳定可复现。
+         */
+        'tabler': async () => (await import('@iconify-json/tabler/icons.json')).default,
         // 注册本地 SVG 图标集合, 从本地文件系统加载图标
         // 在 './src/static/my-icons' 目录下的所有 svg 文件将被注册为图标，
         // my-icons 是图标集合名称，使用 `i-my-icons-图标名` 调用
@@ -89,20 +97,46 @@ export default defineConfig({
   // 动态图标需要在这里配置，或者写在vue页面中注释掉
   safelist: [
     // tabbar（首页/救援咨询/我的）
-    'i-tabler-home', 'i-tabler-home-filled',
-    'i-tabler-message', 'i-tabler-message-filled',
-    'i-tabler-user', 'i-tabler-user-filled',
+    'i-tabler-home',
+    'i-tabler-home-filled',
+    'i-tabler-message',
+    'i-tabler-message-filled',
+    'i-tabler-user',
+    'i-tabler-user-filled',
     // 门店分类金刚区
-    'i-tabler-building-store', 'i-tabler-truck', 'i-tabler-car', 'i-tabler-tool',
-    'i-tabler-truck-delivery', 'i-tabler-wrecking-ball',
+    'i-tabler-building-store',
+    'i-tabler-truck',
+    'i-tabler-car',
+    'i-tabler-tool',
+    'i-tabler-truck-delivery',
+    'i-tabler-wrecking-ball',
     // 通用
-    'i-tabler-star', 'i-tabler-star-filled', 'i-tabler-phone-call', 'i-tabler-phone',
-    'i-tabler-map-pin', 'i-tabler-chevron-right', 'i-tabler-chevron-left',
-    'i-tabler-sos', 'i-tabler-camera', 'i-tabler-x', 'i-tabler-plus',
-    'i-tabler-share', 'i-tabler-help-circle', 'i-tabler-headset', 'i-tabler-settings',
-    'i-tabler-edit', 'i-tabler-logout', 'i-tabler-check', 'i-tabler-circle-check-filled',
-    'i-tabler-info-circle', 'i-tabler-shield-check', 'i-tabler-file-text',
-    'i-tabler-car-4wd', 'i-tabler-car-suv', 'i-tabler-caravan', 'i-tabler-road',
+    'i-tabler-star',
+    'i-tabler-star-filled',
+    'i-tabler-phone-call',
+    'i-tabler-phone',
+    'i-tabler-map-pin',
+    'i-tabler-chevron-right',
+    'i-tabler-chevron-left',
+    'i-tabler-sos',
+    'i-tabler-camera',
+    'i-tabler-x',
+    'i-tabler-plus',
+    'i-tabler-share',
+    'i-tabler-help-circle',
+    'i-tabler-headset',
+    'i-tabler-settings',
+    'i-tabler-edit',
+    'i-tabler-logout',
+    'i-tabler-check',
+    'i-tabler-circle-check-filled',
+    'i-tabler-info-circle',
+    'i-tabler-shield-check',
+    'i-tabler-file-text',
+    'i-tabler-car-4wd',
+    'i-tabler-car-suv',
+    'i-tabler-caravan',
+    'i-tabler-road',
   ],
   rules: [
     [

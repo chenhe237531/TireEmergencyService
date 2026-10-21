@@ -3,7 +3,8 @@ const Layout = () => import("@/layout/index.vue");
 
 /** 救援通知：司机点击「故障找救援」后到这里人工跟进 */
 export default {
-  path: "/tire/rescue",
+  path: "/tire-rescue",
+  redirect: "/tire/rescue",
   name: "TireRescue",
   component: Layout,
   meta: { icon: "tabler/sos", title: "救援通知", rank: 2 },

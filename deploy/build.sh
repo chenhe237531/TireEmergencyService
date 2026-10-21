@@ -7,7 +7,7 @@ BUNDLE="$ROOT/deploy/.bundle"
 echo "==> 构建 API"
 (cd "$ROOT/apps/server" && node prisma/db.js generate >/dev/null && npx nest build)
 
-echo "==> 构建管理端 / 医院端 / 移动工作台"
+echo "==> 构建管理后台"
 (cd "$ROOT/apps/admin" && pnpm build)
 
 echo "==> 构建小程序 H5 版"

@@ -1,5 +1,7 @@
 node_modules
 dist
+# 本地 pnpm 内容寻址存储（离线安装缓存，体积大）
+.pnpm-store/
 .DS_Store
 *.log
 .env.local
@@ -30,6 +32,5 @@ apps/miniapp/project.private.config.json
 pitch/
 # 云托管部署包(构建产物)
 deploy/.bundle/
-deploy/xueji-cloudrun*.zip
 deploy/tire-cloudrun*.zip
 .zcode/

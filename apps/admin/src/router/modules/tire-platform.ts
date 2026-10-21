@@ -3,7 +3,7 @@ const Layout = () => import("@/layout/index.vue");
 
 /** 平台设置：客服电话/二维码、协议、常见问题 */
 export default {
-  path: "/tire/setting",
+  path: "/tire-platform",
   name: "TirePlatform",
   component: Layout,
   redirect: "/tire/setting",
