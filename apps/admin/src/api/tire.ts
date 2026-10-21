@@ -5,9 +5,19 @@
  * code===40001 登录过期跳登录页；其余 code 抛 Error(message) 由页面 message 提示。
  */
 import { http } from "@/utils/http";
+import type { RequestMethods } from "@/utils/http/types";
 
-async function request<T = any>(method: string, url: string, data?: any): Promise<T> {
-  const res: any = await http.request(method, url, { data });
+async function request<T = any>(
+  method: RequestMethods,
+  url: string,
+  data?: any,
+  headers?: Record<string, string>
+): Promise<T> {
+  const res: any = await http.request(
+    method,
+    url,
+    headers ? { data, headers } : { data }
+  );
   if (res.code === 40001) {
     localStorage.removeItem("tire-admin-user");
     window.location.hash = "#/login";
@@ -26,7 +36,7 @@ export const STORE_CATEGORIES: Record<string, string> = {
   tire_both: "轮胎店（大小车）",
   repair_big: "大车修理厂",
   repair_small: "小车修理厂",
-  towing: "救援拖车",
+  towing: "救援拖车"
 };
 
 /** 工单状态（救援通知与咨询工单共用同一状态机） */
@@ -34,7 +44,7 @@ export const ORDER_STATUS: Record<string, string> = {
   pending: "待处理",
   contacting: "跟进中",
   resolved: "已解决",
-  cancelled: "已取消",
+  cancelled: "已取消"
 };
 
 /** 状态 → el-tag 类型（页面直接 :type="statusTag[row.status]"） */
@@ -42,14 +52,14 @@ export const statusTag: Record<string, string> = {
   pending: "danger",
   contacting: "warning",
   resolved: "success",
-  cancelled: "info",
+  cancelled: "info"
 };
 
 /** 司机身份 */
 export const DRIVER_ROLES: Record<string, string> = {
   private_owner: "私人车主",
   fleet: "车队",
-  store: "服务门店",
+  store: "服务门店"
 };
 
 /** 状态流转合法路径（与后端 FLOW 一致，用于按钮可用性判断） */
@@ -57,7 +67,7 @@ export const statusFlow: Record<string, string[]> = {
   pending: ["contacting", "resolved", "cancelled"],
   contacting: ["resolved", "cancelled"],
   resolved: [],
-  cancelled: [],
+  cancelled: []
 };
 
 // ─── 类型定义 ───
@@ -160,15 +170,27 @@ export interface DashboardStats {
   trend: { date: string; rescue: number; consult: number }[];
 }
 
-export interface Paged<T> { list: T[]; total: number; page: number; pageSize: number }
+export interface Paged<T> {
+  list: T[];
+  total: number;
+  page: number;
+  pageSize: number;
+}
 
 // ─── 工作台 ───
 
-export const dashboardStats = () => request<DashboardStats>("get", "/api/v1/admin/dashboard/stats");
+export const dashboardStats = () =>
+  request<DashboardStats>("get", "/api/v1/admin/dashboard/stats");
 
 // ─── 门店管理 ───
 
-export const storeList = (params?: { category?: string; status?: string; keyword?: string; page?: number; pageSize?: number }) =>
+export const storeList = (params?: {
+  category?: string;
+  status?: string;
+  keyword?: string;
+  page?: number;
+  pageSize?: number;
+}) =>
   request<Paged<StoreItem>>("get", `/api/v1/admin/stores${toQuery(params)}`);
 
 export const storeCreate = (data: Partial<StoreItem>) =>
@@ -183,32 +205,74 @@ export const storeDelete = (id: number) =>
 // ─── 救援通知 ───
 
 export const rescueUnreadCount = () =>
-  request<{ rescue: number; consult: number; total: number }>("get", "/api/v1/admin/rescue-alerts/unread-count");
+  request<{ rescue: number; consult: number; total: number }>(
+    "get",
+    "/api/v1/admin/rescue-alerts/unread-count"
+  );
 
-export const rescueList = (params?: { status?: string; start?: string; end?: string; page?: number; pageSize?: number }) =>
-  request<Paged<RescueItem>>("get", `/api/v1/admin/rescue-alerts${toQuery(params)}`);
+export const rescueList = (params?: {
+  status?: string;
+  start?: string;
+  end?: string;
+  page?: number;
+  pageSize?: number;
+}) =>
+  request<Paged<RescueItem>>(
+    "get",
+    `/api/v1/admin/rescue-alerts${toQuery(params)}`
+  );
 
-export const rescueHandle = (id: number, data: { status?: string; note?: string }) =>
-  request<RescueItem>("patch", `/api/v1/admin/rescue-alerts/${id}`, data);
+export const rescueHandle = (
+  id: number,
+  data: { status?: string; note?: string }
+) => request<RescueItem>("patch", `/api/v1/admin/rescue-alerts/${id}`, data);
 
 // ─── 咨询工单 ───
 
-export const consultList = (params?: { status?: string; keyword?: string; start?: string; end?: string; page?: number; pageSize?: number }) =>
-  request<Paged<ConsultItem>>("get", `/api/v1/admin/consults${toQuery(params)}`);
+export const consultList = (params?: {
+  status?: string;
+  keyword?: string;
+  start?: string;
+  end?: string;
+  page?: number;
+  pageSize?: number;
+}) =>
+  request<Paged<ConsultItem>>(
+    "get",
+    `/api/v1/admin/consults${toQuery(params)}`
+  );
 
 export const consultDetail = (id: number) =>
   request<ConsultItem>("get", `/api/v1/admin/consults/${id}`);
 
-export const consultHandle = (id: number, data: { status?: string; note?: string }) =>
-  request<ConsultItem>("patch", `/api/v1/admin/consults/${id}`, data);
+export const consultHandle = (
+  id: number,
+  data: { status?: string; note?: string }
+) => request<ConsultItem>("patch", `/api/v1/admin/consults/${id}`, data);
 
 // ─── 司机与浏览痕迹 ───
 
-export const driverList = (params?: { keyword?: string; role?: string; page?: number; pageSize?: number }) =>
+export const driverList = (params?: {
+  keyword?: string;
+  role?: string;
+  page?: number;
+  pageSize?: number;
+}) =>
   request<Paged<DriverItem>>("get", `/api/v1/admin/drivers${toQuery(params)}`);
 
-export const viewLogList = (params?: { driverId?: number; storeId?: number; action?: string; start?: string; end?: string; page?: number; pageSize?: number }) =>
-  request<Paged<ViewLogItem>>("get", `/api/v1/admin/view-logs${toQuery(params)}`);
+export const viewLogList = (params?: {
+  driverId?: number;
+  storeId?: number;
+  action?: string;
+  start?: string;
+  end?: string;
+  page?: number;
+  pageSize?: number;
+}) =>
+  request<Paged<ViewLogItem>>(
+    "get",
+    `/api/v1/admin/view-logs${toQuery(params)}`
+  );
 
 // ─── 平台设置与 FAQ ───
 
@@ -221,16 +285,23 @@ export interface PlatformSettings {
   shareTitle?: string;
 }
 
-export const getSettings = () => request<PlatformSettings>("get", "/api/v1/admin/settings");
+export const getSettings = () =>
+  request<PlatformSettings>("get", "/api/v1/admin/settings");
 
 export const saveSettings = (data: PlatformSettings) =>
   request<{ ok: boolean }>("patch", "/api/v1/admin/settings", data);
 
 export const faqList = (keyword?: string) =>
-  request<FaqItem[]>("get", `/api/v1/admin/faqs${keyword ? `?keyword=${encodeURIComponent(keyword)}` : ""}`);
+  request<FaqItem[]>(
+    "get",
+    `/api/v1/admin/faqs${keyword ? `?keyword=${encodeURIComponent(keyword)}` : ""}`
+  );
 
-export const faqCreate = (data: { question: string; answer: string; sort?: number }) =>
-  request<FaqItem>("post", "/api/v1/admin/faqs", data);
+export const faqCreate = (data: {
+  question: string;
+  answer: string;
+  sort?: number;
+}) => request<FaqItem>("post", "/api/v1/admin/faqs", data);
 
 export const faqUpdate = (id: number, data: Partial<FaqItem>) =>
   request<FaqItem>("patch", `/api/v1/admin/faqs/${id}`, data);
@@ -244,7 +315,15 @@ export const faqDelete = (id: number) =>
 export const uploadImage = (file: File) => {
   const form = new FormData();
   form.append("file", file);
-  return request<{ url: string; size: number }>("post", "/api/v1/admin/upload", form);
+  // 必须显式声明 multipart，否则 axios 会按默认的 application/json 把 FormData 序列化成 { }
+  return request<{ url: string; size: number }>(
+    "post",
+    "/api/v1/admin/upload",
+    form,
+    {
+      "Content-Type": "multipart/form-data"
+    }
+  );
 };
 
 // ─── 工具 ───

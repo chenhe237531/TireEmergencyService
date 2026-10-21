@@ -3,7 +3,7 @@ const Layout = () => import("@/layout/index.vue");
 
 /** 司机与痕迹：司机列表 + 门店浏览/点击痕迹（辅助主动线下对接） */
 export default {
-  path: "/tire/driver",
+  path: "/tire-driver",
   name: "TireDriver",
   component: Layout,
   redirect: "/tire/driver",
