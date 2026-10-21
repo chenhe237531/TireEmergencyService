@@ -6,8 +6,8 @@
  */
 import { http } from "@/utils/http";
 
-async function request<T = any>(method: string, url: string, data?: any): Promise<T> {
-  const res: any = await http.request(method, url, { data });
+async function request<T = any>(method: string, url: string, data?: any, headers?: Record<string, string>): Promise<T> {
+  const res: any = await http.request(method, url, headers ? { data, headers } : { data });
   if (res.code === 40001) {
     localStorage.removeItem("tire-admin-user");
     window.location.hash = "#/login";
@@ -244,7 +244,10 @@ export const faqDelete = (id: number) =>
 export const uploadImage = (file: File) => {
   const form = new FormData();
   form.append("file", file);
-  return request<{ url: string; size: number }>("post", "/api/v1/admin/upload", form);
+  // 必须显式声明 multipart，否则 axios 会按默认的 application/json 把 FormData 序列化成 { }
+  return request<{ url: string; size: number }>("post", "/api/v1/admin/upload", form, {
+    "Content-Type": "multipart/form-data"
+  });
 };
 
 // ─── 工具 ───
