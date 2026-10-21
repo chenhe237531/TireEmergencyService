@@ -1,5 +1,5 @@
-# 雪姬美业六维健康平台 · 运行镜像
-# 前端（管理端、小程序 H5）在本地构建后随部署包上传；镜像内只安装 API 依赖（VPS 内存小，不在服务器上构建前端）
+# 小蚂蚁 · 轮胎救援平台 · 运行镜像
+# 前端（管理后台、小程序 H5）在本地构建后随部署包上传；镜像内只安装 API 依赖（VPS 内存小，不在服务器上构建前端）
 # 数据库开关：sqlite（默认，数据在 /data 卷）/ mysql（微信云托管，连接见 apps/server/prisma/db-env.js）
 # 构建参数只决定预先生成哪种 Prisma Client；运行时改 DB_PROVIDER 也可以，容器启动时会自动重新生成
 FROM node:22-bookworm-slim
@@ -10,7 +10,7 @@ ENV TZ=Asia/Shanghai \
     WEB_ROOT=/app \
     PORT=3000 \
     DB_PROVIDER=${DB_PROVIDER} \
-    DATABASE_URL=file:/data/xueji.db
+    DATABASE_URL=file:/data/tire.db
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends openssl ca-certificates tzdata \
@@ -40,5 +40,5 @@ USER 10001:10001
 EXPOSE 3000
 VOLUME ["/data"]
 HEALTHCHECK --interval=30s --timeout=5s --start-period=60s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/v1/app/about').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||3000)+'/api/v1/faqs').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 ENTRYPOINT ["docker-entrypoint.sh"]

@@ -5,7 +5,7 @@ set -e
 cd /app/server
 # 建表 + 空库灌种子数据。表结构稳定后可在控制台设 SKIP_DB_PUSH=1，省掉每次冷启动的建表耗时
 if [ "${SKIP_DB_PUSH:-0}" = "1" ]; then
-  echo "[xueji] SKIP_DB_PUSH=1，跳过建表"
+  echo "[tire] SKIP_DB_PUSH=1，跳过建表"
 else
   node prisma/db.js init
 fi

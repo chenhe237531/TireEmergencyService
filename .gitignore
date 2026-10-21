@@ -30,6 +30,5 @@ apps/miniapp/project.private.config.json
 pitch/
 # 云托管部署包(构建产物)
 deploy/.bundle/
-deploy/xueji-cloudrun*.zip
 deploy/tire-cloudrun*.zip
 .zcode/

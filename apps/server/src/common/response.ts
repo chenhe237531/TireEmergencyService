@@ -36,7 +36,7 @@ export class AllExceptionsFilter implements ExceptionFilter {
       const status = exception.getStatus()
       return res.status(status).json({ code: status * 100, message: exception.message, data: null })
     }
-    console.error('[xueji] unhandled', exception)
+    console.error('[tire] unhandled', exception)
     return res.status(200).json({ code: 50000, message: exception?.message || '服务器错误', data: null })
   }
 }

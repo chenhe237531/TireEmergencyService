@@ -1,15 +1,15 @@
-# 用法（在 /opt/xueji 下）：docker compose up -d --build
+# 用法（在 /opt/tire 下）：docker compose up -d --build
 services:
-  xueji:
+  tire:
     build: .
-    image: xueji-health:latest
-    container_name: xueji
+    image: tire-rescue:latest
+    container_name: tire
     restart: unless-stopped
     # 使用主机网络：端口 3000 受主机防火墙管控（演示环境仅内网可访问）。
     # 不使用 ports 映射，因为 Docker 的端口映射会绕过主机防火墙，把服务暴露到公网。
     network_mode: host
     env_file:
-      - ./xueji.env
+      - ./tire.env
     environment:
       # issue #16：上传目录指到持久卷，容器以非 root 运行时可写、重新部署不丢文件
       - UPLOAD_DIR=/data/uploads
