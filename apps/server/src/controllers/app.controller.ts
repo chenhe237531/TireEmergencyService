@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common'
+import { Body, Controller, Get, Ip, Param, ParseIntPipe, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { memoryStorage } from 'multer'
 import { FileInterceptor } from '@nestjs/platform-express/multer'
 import { createHash } from 'node:crypto'
@@ -8,6 +8,7 @@ import { RESCUE_VEHICLE_TYPES, TICKET_STATUS_NAMES } from '../common/ticket'
 import { saveUploadFile } from '../common/upload'
 import { distanceLabel, haversineKm, pick } from '../common/util'
 import { demoLoginAllowed, getWxPhoneNumber, wxConfigured } from '../common/wx'
+import { SMS_CODE_TTL_MS, SMS_IP_HOURLY_LIMIT, SMS_MAX_ATTEMPTS, SMS_PHONE_DAILY_LIMIT, SMS_RESEND_INTERVAL_MS, demoCode, generateCode, hashCode, sendCode, verifyCode } from '../common/sms'
 import { PrismaService } from '../common/prisma.service'
 
 /** 门店分类字典（与 schema.prisma Store.category 注释一致） */
@@ -80,6 +81,87 @@ export class AppAuthController {
     return {
       accessToken: signToken({ id: driver.id }, 'app'),
       user: this.view(driver),
+    }
+  }
+
+  /**
+   * 发送短信验证码：不泄露手机号是否注册。
+   * 频控：同手机号 60 秒 1 条、每天 5 条；同 IP 每小时 10 条。
+   */
+  @Post('auth/sms/send')
+  async sendSms(@Body() body: { phone?: string }, @Ip() ip: string) {
+    const phone = String(body.phone || '').trim()
+    if (!/^1[3-9]\d{9}$/.test(phone)) throw Err.bad('请输入正确的手机号')
+
+    const now = new Date()
+    const last = await this.prisma.smsCode.findFirst({
+      where: { phone, scene: 'login' },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (last && now.getTime() - last.createdAt.getTime() < SMS_RESEND_INTERVAL_MS)
+      throw Err.tooMany('验证码发送太频繁，请 60 秒后再试')
+
+    const dayStart = new Date(now)
+    dayStart.setHours(0, 0, 0, 0)
+    const phoneCount = await this.prisma.smsCode.count({ where: { phone, scene: 'login', createdAt: { gte: dayStart } } })
+    if (phoneCount >= SMS_PHONE_DAILY_LIMIT)
+      throw Err.tooMany('该手机号今日验证码次数已达上限，请明天再试')
+
+    const ipCount = await this.prisma.smsCode.count({
+      where: { ip, createdAt: { gte: new Date(now.getTime() - 60 * 60 * 1000) } },
+    })
+    if (ipCount >= SMS_IP_HOURLY_LIMIT)
+      throw Err.tooMany('请求过于频繁，请稍后再试')
+
+    const code = generateCode()
+    await this.prisma.smsCode.create({
+      data: { phone, scene: 'login', codeHash: hashCode(phone, code), ip, expiresAt: new Date(now.getTime() + SMS_CODE_TTL_MS) },
+    })
+    await sendCode(phone, code)
+
+    return { sent: true, expiresIn: Math.floor(SMS_CODE_TTL_MS / 1000), ...(demoCode() ? { demoCode: code } : {}) }
+  }
+
+  /**
+   * 手机号 + 验证码登录：新手机号自动创建司机账号，均不提示「未注册」。
+   * 令牌受众 app，30 天有效；返回 isNew 供端上做首登引导。
+   */
+  @Post('auth/sms/login')
+  async smsLogin(@Body() body: { phone?: string, code?: string }) {
+    const phone = String(body.phone || '').trim()
+    const code = String(body.code || '').trim()
+    if (!/^1[3-9]\d{9}$/.test(phone)) throw Err.bad('请输入正确的手机号')
+    if (!/^\d{6}$/.test(code)) throw Err.bad('请输入 6 位验证码')
+
+    const record = await this.prisma.smsCode.findFirst({
+      where: { phone, scene: 'login', consumedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!record || record.attempts >= SMS_MAX_ATTEMPTS) throw Err.smsCodeInvalid()
+    if (!verifyCode(phone, code, record.codeHash)) {
+      await this.prisma.smsCode.update({ where: { id: record.id }, data: { attempts: { increment: 1 } } })
+      throw Err.smsCodeInvalid()
+    }
+    // 原子消费：并发重复提交同一验证码时只有一次能成功
+    const consumed = await this.prisma.smsCode.updateMany({
+      where: { id: record.id, consumedAt: null },
+      data: { consumedAt: new Date() },
+    })
+    if (consumed.count === 0) throw Err.smsCodeInvalid()
+
+    let driver = await this.prisma.driver.findFirst({ where: { phone } })
+    const isNew = !driver
+    if (driver) {
+      if (driver.status !== 'active') throw new BizError(40003, '账号已被封禁，请联系平台客服')
+      driver = await this.prisma.driver.update({ where: { id: driver.id }, data: { lastLoginAt: new Date() } })
+    }
+    else {
+      driver = await this.prisma.driver.create({ data: { phone, nickname: '司机用户' } })
+    }
+    return {
+      accessToken: signToken({ id: driver.id }, 'app'),
+      user: this.view(driver),
+      isNew,
     }
   }
 

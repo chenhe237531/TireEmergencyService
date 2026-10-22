@@ -8,10 +8,11 @@
  *
  * 交互状态：按钮 loading / 协议未勾 shake / 身份未选提示 / 登录失败内联重试。
  */
-import { computed, ref } from 'vue'
+import { computed, onUnmounted, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import TBrand from '@/components/tire/TBrand.vue'
 import TButton from '@/components/tire/TButton.vue'
+import TField from '@/components/tire/TField.vue'
 import { http } from '@/tire/request'
 import { useTire } from '@/tire/store'
 import { deviceId, go, toast } from '@/tire/utils'
@@ -108,6 +109,99 @@ async function login() {
   }
 }
 
+/* ── 安卓 App：手机号 + 短信验证码登录 ── */
+const phone = ref('')
+const smsCode = ref('')
+const sending = ref(false)
+const countdown = ref(0)
+let timer: ReturnType<typeof setInterval> | null = null
+
+const phoneValid = computed(() => /^1[3-9]\d{9}$/.test(phone.value))
+
+function startCountdown() {
+  countdown.value = 60
+  timer = setInterval(() => {
+    countdown.value -= 1
+    if (countdown.value <= 0 && timer) {
+      clearInterval(timer)
+      timer = null
+    }
+  }, 1000)
+}
+
+onUnmounted(() => {
+  if (timer)
+    clearInterval(timer)
+})
+
+function errText(e: any, fallback: string) {
+  return e?.message && e.message !== 'network' ? e.message : fallback
+}
+
+async function sendSms() {
+  if (sending.value || countdown.value > 0)
+    return
+  if (!phoneValid.value) {
+    errMsg.value = '请输入正确的 11 位手机号'
+    return
+  }
+  sending.value = true
+  errMsg.value = ''
+  try {
+    const data = await http.post<{ sent: boolean, demoCode?: string }>('/app/auth/sms/send', { phone: phone.value }, { silent: true })
+    // 本地演示模式服务端会回传固定验证码，直接填入便于联调
+    if (data?.demoCode)
+      smsCode.value = data.demoCode
+    toast(data?.demoCode ? `演示验证码：${data.demoCode}` : '验证码已发送')
+    startCountdown()
+  }
+  catch (e: any) {
+    errMsg.value = errText(e, '验证码发送失败，请稍后重试')
+  }
+  finally {
+    sending.value = false
+  }
+}
+
+async function smsLogin() {
+  if (loading.value)
+    return
+  if (!phoneValid.value) {
+    errMsg.value = '请输入正确的 11 位手机号'
+    return
+  }
+  if (!/^\d{6}$/.test(smsCode.value)) {
+    errMsg.value = '请输入 6 位验证码'
+    return
+  }
+  loading.value = true
+  errMsg.value = ''
+  try {
+    const data = await http.post<{ accessToken: string, user: any, isNew: boolean }>(
+      '/app/auth/sms/login',
+      { phone: phone.value, code: smsCode.value },
+      { silent: true },
+    )
+    tire.setToken(data.accessToken)
+    await tire.loadMe()
+    if (tire.me?.role) {
+      toast(data.isNew ? '欢迎加入小蚂蚁' : '欢迎回来')
+      setTimeout(jumpIn, 400)
+    }
+    else {
+      step.value = 2
+    }
+  }
+  catch (e: any) {
+    if (e?.code === 40003)
+      tire.logout()
+    errMsg.value = errText(e, '登录没有成功，请检查网络后重试')
+  }
+  finally {
+    loading.value = false
+  }
+}
+
 /** 未勾协议：抖一下并在复选框旁给出原因，比只弹 toast 更容易定位 */
 function requireAgree() {
   agreeShake.value = true
@@ -120,6 +214,15 @@ function requireAgree() {
 function pickRole(v: string) {
   role.value = v
   roleShake.value = false
+}
+
+/** 错误提示里的「重试」按平台走对应登录方式 */
+function retryLogin() {
+  // #ifdef APP-PLUS
+  smsLogin()
+  return
+  // #endif
+  login()
 }
 
 async function submit() {
@@ -212,6 +315,39 @@ async function submit() {
     <!-- 第一步：授权登录 -->
     <view v-if="step === 1" class="t-page-pad mt-4">
       <view class="t-card p-5">
+        <!-- #ifdef APP-PLUS -->
+        <view class="text-[17px] text-[#26221D] font-bold">
+          手机号登录
+        </view>
+        <view class="mt-1 text-[13px] text-[#8F8981] leading-relaxed">
+          用手机号接收验证码登录；未注册的手机号会自动创建账号。
+        </view>
+
+        <view class="mt-4">
+          <TField label="手机号" required>
+            <input v-model="phone" class="t-input" type="number" :maxlength="11" placeholder="请输入 11 位手机号">
+          </TField>
+        </view>
+
+        <view class="mt-3">
+          <TField label="验证码" required>
+            <view class="flex items-center gap-2">
+              <input v-model="smsCode" class="t-input min-w-0 flex-1" type="number" :maxlength="6" placeholder="请输入 6 位验证码">
+              <TButton size="sm" type="ghost" :loading="sending" :disabled="countdown > 0" @click="sendSms">
+                {{ countdown > 0 ? `${countdown}s 后重发` : '获取验证码' }}
+              </TButton>
+            </view>
+          </TField>
+        </view>
+
+        <view class="mt-5">
+          <TButton block size="lg" :loading="loading" @click="smsLogin">
+            {{ loading ? '正在登录' : '登录 / 注册' }}
+          </TButton>
+        </view>
+        <!-- #endif -->
+
+        <!-- #ifndef APP-PLUS -->
         <view class="text-[17px] text-[#26221D] font-bold">
           微信一键登录
         </view>
@@ -224,22 +360,25 @@ async function submit() {
             {{ loading ? '正在登录' : '微信一键登录' }}
           </TButton>
         </view>
+        <!-- #endif -->
 
         <!-- 登录失败：内联说明 + 重试，不用弹窗打断 -->
         <view v-if="errMsg" class="mt-3">
           <view class="t-readout t-readout--error">
             <text class="i-tabler-alert-triangle text-[15px]" />
             <text class="flex-1">{{ errMsg }}</text>
-            <text class="font-semibold underline" @click="login">重试</text>
+            <text class="font-semibold underline" @click="retryLogin">重试</text>
           </view>
         </view>
 
+        <!-- #ifndef APP-PLUS -->
         <view class="mt-4 rounded-xl bg-[#FBF8F3] px-3 py-2.5">
           <view class="flex items-start gap-2 text-[12px] text-[#8F8981] leading-relaxed">
             <text class="i-tabler-info-circle mt-[2px] text-[14px]" />
             <text>开发演示模式：同一设备自动保持同一账号，换设备即为新用户。</text>
           </view>
         </view>
+        <!-- #endif -->
       </view>
 
       <view class="mt-4 text-center text-[12px] text-[#A8A199] leading-relaxed">
