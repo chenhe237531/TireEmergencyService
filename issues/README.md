@@ -1,5 +1,7 @@
 # TIRE 多 Agent 并行开发 · 总则（所有任务 Agent 必读）
 
+> **历史文档**：本目录是早期多 Agent 并行开发的任务书，不是当前待办来源。Android v1 的任务与验收统一在 `chenhe237531/TireEmergencyApp` 的 GitHub Issues 管理，请勿在本目录新建 ticket。
+
 10 个任务并行开发「小蚂蚁轮胎救援平台」两端页面。主控已完成：monorepo 骨架、后端全部 API、两端路由/页面桩/契约层，并启动了三个常驻服务。你只负责自己任务书列出的文件。
 
 ## 常驻服务（已运行，禁止启动/杀掉/重启任何 dev server）
