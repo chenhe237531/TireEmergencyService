@@ -40,8 +40,9 @@ async function openDoc(tab: 'agreement' | 'privacy') {
     const data = await loadSettings()
     docContent.value = data?.[tab === 'agreement' ? 'userAgreement' : 'privacyPolicy'] || ''
   }
-  catch (e: any) {
-    docError.value = e?.message && e.message !== 'network' ? e.message : '协议内容没加载出来，请检查网络后重试'
+  catch (e) {
+    const msg = e instanceof Error ? e.message : ''
+    docError.value = msg && msg !== 'network' ? msg : '协议内容没加载出来，请检查网络后重试'
   }
   finally {
     docLoading.value = false

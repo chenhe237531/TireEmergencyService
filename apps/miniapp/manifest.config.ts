@@ -61,8 +61,8 @@ export default defineManifestConfig({
         minSdkVersion: 21,
         targetSdkVersion: 30,
         abiFilters: ['armeabi-v7a', 'arm64-v8a'],
-        // 开发联调允许 HTTP（局域网接口）；生产接口地址由 VITE_APP_SERVER_BASEURL 强制 HTTPS
-        usesCleartextTraffic: true,
+        // 开发联调允许 HTTP（局域网接口）；生产包不放开明文流量
+        usesCleartextTraffic: getMode() !== 'production',
         // 权限与隐私政策中的能力清单保持一致：定位（高德）、相机/相册（现场照片）、
         // 网络、通知、应用内更新安装；不声明与业务无关的读日志/读取设备信息等权限
         permissions: [
