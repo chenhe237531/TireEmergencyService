@@ -56,25 +56,33 @@ export default defineManifestConfig({
     distribute: {
       /* android打包配置 */
       android: {
+        // 包名一经上架不可更改；正式发布前替换为公司自有域名倒序
+        packagename: 'com.xiaomayi.tire',
         minSdkVersion: 21,
         targetSdkVersion: 30,
         abiFilters: ['armeabi-v7a', 'arm64-v8a'],
+        // 开发联调允许 HTTP（局域网接口）；生产接口地址由 VITE_APP_SERVER_BASEURL 强制 HTTPS
+        usesCleartextTraffic: true,
+        // 权限与隐私政策中的能力清单保持一致：定位（高德）、相机/相册（现场照片）、
+        // 网络、通知、应用内更新安装；不声明与业务无关的读日志/读取设备信息等权限
         permissions: [
-          '<uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>',
-          '<uses-permission android:name="android.permission.MOUNT_UNMOUNT_FILESYSTEMS"/>',
-          '<uses-permission android:name="android.permission.VIBRATE"/>',
-          '<uses-permission android:name="android.permission.READ_LOGS"/>',
-          '<uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>',
-          '<uses-feature android:name="android.hardware.camera.autofocus"/>',
+          '<uses-permission android:name="android.permission.INTERNET"/>',
           '<uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>',
-          '<uses-permission android:name="android.permission.CAMERA"/>',
-          '<uses-permission android:name="android.permission.GET_ACCOUNTS"/>',
-          '<uses-permission android:name="android.permission.READ_PHONE_STATE"/>',
+          '<uses-permission android:name="android.permission.ACCESS_WIFI_STATE"/>',
           '<uses-permission android:name="android.permission.CHANGE_WIFI_STATE"/>',
-          '<uses-permission android:name="android.permission.WAKE_LOCK"/>',
-          '<uses-permission android:name="android.permission.FLASHLIGHT"/>',
+          '<uses-permission android:name="android.permission.CHANGE_NETWORK_STATE"/>',
+          '<uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>',
+          '<uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>',
+          '<uses-permission android:name="android.permission.CAMERA"/>',
           '<uses-feature android:name="android.hardware.camera"/>',
-          '<uses-permission android:name="android.permission.WRITE_SETTINGS"/>',
+          '<uses-feature android:name="android.hardware.camera.autofocus"/>',
+          '<uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>',
+          '<uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>',
+          '<uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28"/>',
+          '<uses-permission android:name="android.permission.VIBRATE"/>',
+          '<uses-permission android:name="android.permission.WAKE_LOCK"/>',
+          '<uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>',
+          '<uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>',
         ],
       },
       /* ios打包配置 */

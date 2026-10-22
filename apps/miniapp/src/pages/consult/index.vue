@@ -11,6 +11,7 @@ import TBrand from '@/components/tire/TBrand.vue'
 import TButton from '@/components/tire/TButton.vue'
 import TField from '@/components/tire/TField.vue'
 import { http, uploadImage } from '@/tire/request'
+import { canInitThirdPartySdk } from '@/tire/app/privacy'
 import { useShare } from '@/tire/share'
 import { useTire } from '@/tire/store'
 import { toast } from '@/tire/utils'
@@ -62,6 +63,13 @@ onLoad(async () => {
 })
 
 function locate() {
+  // #ifdef APP-PLUS
+  // 未同意隐私政策前不初始化高德定位 / 地图 SDK
+  if (!canInitThirdPartySdk()) {
+    locState.value = 'fail'
+    return
+  }
+  // #endif
   locState.value = 'locating'
   uni.getLocation({
     type: 'gcj02',

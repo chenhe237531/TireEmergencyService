@@ -1,7 +1,13 @@
 /** 接口请求：统一响应 { code, message, data }，code===0 返回 data */
+import { resolveAppServerBaseUrl } from './app/env'
+
 let BASE: string = import.meta.env.VITE_SERVER_BASEURL || '/api/v1'
 // #ifdef MP-WEIXIN
 BASE = import.meta.env.VITE_MP_SERVER_BASEURL || BASE
+// #endif
+// #ifdef APP-PLUS
+// 安卓 App 没有同源概念，必须显式配置服务端地址；生产环境强制 HTTPS
+BASE = resolveAppServerBaseUrl(import.meta.env.VITE_APP_SERVER_BASEURL, !!import.meta.env.PROD, BASE)
 // #endif
 
 /**
