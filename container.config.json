@@ -10,7 +10,9 @@
   "policyThreshold": 80,
   "envParams": {
     "DB_PROVIDER": "mysql",
-    "MYSQL_DATABASE": "tire"
+    "MYSQL_DATABASE": "tire",
+    "SEED_DEMO": "0",
+    "ALLOW_DEMO_LOGIN": "0"
   },
   "customLogs": "stdout",
   "initialDelaySeconds": 10,

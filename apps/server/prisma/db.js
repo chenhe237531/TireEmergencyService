@@ -27,7 +27,13 @@ function writeMysqlSchema() {
   const out = src
     .replace(/(datasource\s+db\s*\{[^}]*?provider\s*=\s*)"sqlite"/, (_, head) => { replaced++; return `${head}"mysql"` })
     .split('\n')
-    .map(line => /^\s*\/\//.test(line) ? line : line.replace(/^(.*?)\s*\/\/\s*mysql:\s*(@db\.\w+(?:\([^)]*\))?)\s*(.*)$/, (_, decl, attr, rest) => `${decl} ${attr}${rest ? ` // ${rest}` : ''}`))
+    .map(line => /^\s*\/\//.test(line) ? line : line.replace(/^(.*?)\s*\/\/\s*mysql:\s*(@db\.\w+(?:\([^)]*\))?)\s*(.*)$/, (_, decl, attr, rest) => {
+      let d = decl
+      // MySQL 8 不允许 TEXT/BLOB/JSON 使用字面量默认值，改用表达式默认值 DEFAULT ('')
+      if (attr === '@db.Text' && /@default\(""\)/.test(d))
+        d = d.replace(/@default\(""\)/, `@default(dbgenerated("('')"))`)
+      return `${d} ${attr}${rest ? ` // ${rest}` : ''}`
+    }))
     .join('\n')
   if (!replaced) throw new Error('[db] schema.prisma 中没找到 provider = "sqlite"')
   writeFileSync(MYSQL_SCHEMA, `// ⚠️ 由 prisma/db.js 根据 schema.prisma 自动生成，请勿手改（改 schema.prisma 即可）\n${out}`)
@@ -70,17 +76,7 @@ function ensureClient(provider, schema) {
   generate(schema)
 }
 
-async function isEmpty() {
-  const { PrismaClient } = require('@prisma/client')
-  const client = new PrismaClient()
-  try {
-    return (await client.staff.count()) === 0
-  } finally {
-    await client.$disconnect()
-  }
-}
-
-/** MySQL 多实例同时启动（云托管扩容 / 滚动发布）时串行执行 init，避免并发建表或重复写入演示数据 */
+/** MySQL 多实例同时启动（云托管扩容 / 滚动发布）时串行执行 init，避免并发建表或重复写入数据 */
 async function withInitLock(provider, url, fn) {
   if (provider !== 'mysql') return fn()
   const { PrismaClient } = require('@prisma/client')
@@ -134,10 +130,8 @@ async function main() {
     case 'init':
       await withInitLock(provider, url, async () => {
         prisma(['db', 'push', '--skip-generate'], schema)
-        if (await isEmpty()) {
-          console.log('[db] 数据库为空，写入演示数据')
-          tsNode('prisma/seed.ts')
-        }
+        // seed 内部按表幂等补齐：生产只保证管理员/设置/FAQ，演示数据由 SEED_DEMO 控制
+        tsNode('prisma/seed.ts')
       })
       break
     case 'reset':

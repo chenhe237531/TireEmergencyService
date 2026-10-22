@@ -64,6 +64,7 @@ model Store {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   viewLogs     ViewLog[]
+  rescueAlerts RescueAlert[]
 }
 
 // ─── 业务工单（平台人工调度：不走线上交易） ───
@@ -73,6 +74,8 @@ model RescueAlert {
   id           Int       @id @default(autoincrement())
   driverId     Int?
   driver       Driver?   @relation(fields: [driverId], references: [id])
+  vehicleType  String    @default("") // big_truck 大车 | small_car 小车 | other 其他
+  plateNo      String    @default("") // 车牌号（可选）
   lat          Float?
   lng          Float?
   locationDesc String    @default("") // mysql: @db.Text
@@ -80,8 +83,14 @@ model RescueAlert {
   note         String    @default("") // 后台跟进备注 // mysql: @db.Text
   handledBy    String    @default("") // 处理人（员工姓名）
   handledAt    DateTime?
+  assignedStoreId Int?
+  assignedStore   Store?  @relation(fields: [assignedStoreId], references: [id])
+  assignedAt   DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+
+  @@index([driverId, createdAt])
+  @@index([status, createdAt])
 }
 
 /** 服务咨询：司机提交的求助表单（车牌/车型/位置/故障描述/图片/联系方式） */
@@ -104,6 +113,8 @@ model ConsultRequest {
   handledAt    DateTime?
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
+
+  @@index([driverId, createdAt])
 }
 
 /** 浏览/点击痕迹：后台用于判断司机意向、主动线下对接 */
@@ -126,12 +137,29 @@ model Faq {
   sort      Int      @default(0)
   status    String   @default("active") // active | hidden
   createdAt DateTime @default(now())
+  // 给已有历史数据一个默认值，避免 db push 在原表上新增必填列失败
+  updatedAt DateTime @default(now()) @updatedAt
 }
 
 /** 平台设置：key-value（servicePhone 客服电话 | wechatQr 客服二维码 | about 关于我们 | userAgreement 用户协议 | privacyPolicy 隐私政策 | shareTitle 分享文案） */
 model Setting {
   key   String @id
   value String @default("") // mysql: @db.Text
+}
+
+/** 工单操作流水：状态流转、派单、备注变更都留痕，便于追责与复盘 */
+model TicketLog {
+  id           Int      @id @default(autoincrement())
+  ticketType   String // rescue | consult
+  ticketId     Int
+  fromStatus   String   @default("")
+  toStatus     String   @default("")
+  note         String   @default("") // mysql: @db.Text
+  operatorId   Int?
+  operatorName String   @default("")
+  createdAt    DateTime @default(now())
+
+  @@index([ticketType, ticketId])
 }
 
 /** 上传文件存数据库（云托管磁盘易失）；访问路径 /uploads/<name> */

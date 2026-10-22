@@ -1,11 +1,20 @@
 /**
- * 演示数据种子：管理员、示例门店（郑州周边，覆盖 6 个分类）、FAQ、平台设置、演示工单。
- * 运行：node prisma/db.js seed（db:reset 会清库后自动执行）
+ * 初始化数据：
+ * - 必装内容：管理员、平台设置、FAQ（生产环境同样需要）
+ * - 演示内容：10 家门店、演示司机、工单、浏览痕迹（仅 SEED_DEMO=1 或非生产环境）
+ *
+ * 生产环境默认不写入演示门店/工单，也不会使用 admin123 默认密码：
+ *   未设置 INITIAL_ADMIN_PASSWORD 时随机生成，并在启动日志中打印一次。
+ *   SEED_DEMO=1 可显式开启演示数据；本地开发默认开启。
  */
+import { randomBytes } from 'node:crypto'
 import { PrismaClient } from '@prisma/client'
 import { hashPwd } from '../src/common/util'
 
 const prisma = new PrismaClient()
+
+const isProd = process.env.NODE_ENV === 'production'
+const seedDemo = process.env.SEED_DEMO === '1' || (process.env.SEED_DEMO !== '0' && !isProd)
 
 /** 示例门店：坐标以郑州东区（约 34.75, 113.75）为中心散布，方便按距离排序演示 */
 const STORES = [
@@ -34,55 +43,119 @@ const SETTINGS: Record<string, string> = {
   wechatQr: '',
   about: '小蚂蚁轮胎救援是连接司机与专业轮胎服务商的救援服务平台。无论您在城市道路还是高速途中遭遇爆胎、亏气等轮胎故障，平台都将第一时间为您对接附近正规轮胎门店与救援力量，提供标准化、可信赖的补胎换胎与拖车救援服务。小蚂蚁，随叫随到，使命必达。',
   userAgreement: '一、服务说明\n小蚂蚁轮胎救援平台为司机用户与轮胎服务商提供信息对接服务。平台根据您提交的需求，由客服人工为您沟通协调附近门店，具体维修服务及费用由门店线下提供与收取。\n\n二、用户义务\n1. 您应提供真实有效的联系方式与车辆信息；\n2. 线下服务时请与门店确认服务内容与价格；\n3. 不得利用平台从事违法违规活动。\n\n三、免责声明\n平台不对门店线下服务的施工质量、价格争议承担直接责任，但会协助您协调处理。继续使用即表示您已阅读并同意本协议。',
-  privacyPolicy: '我们非常重视您的个人信息保护。\n\n1. 信息收集：登录时获取您的微信昵称、头像，以及您主动填写的手机号、位置、车辆与故障信息；\n2. 信息使用：仅用于平台客服与您联系、为您对接救援门店；\n3. 信息保护：门店的联系方式与详细地址受平台保护，同样不会向第三方泄露您的信息；\n4. 您可随时在小程序「我的-个人资料」中查看或修改您的个人信息。',
+  privacyPolicy: '我们非常重视您的个人信息保护。\n\n1. 信息收集：登录时获取您的微信昵称、头像，以及您主动填写的手机号、位置、车辆与故障信息；\n2. 信息使用：仅用于平台客服与您联系、为您对接救援门店；\n3. 信息保护：门店的联系方式与详细地址受平台保护，同样不会向第三方泄露您的信息；\n4. 您可随时在小程序「我的-个人资料」中查看或修改您的个人信息，在「我的-我的记录」中查看求助进度。',
   shareTitle: '小蚂蚁轮胎救援 · 24小时轮胎救援一键呼叫',
 }
 
+async function ensureStaff() {
+  const username = (process.env.INITIAL_ADMIN_USERNAME || 'admin').trim() || 'admin'
+  const existing = await prisma.staff.findUnique({ where: { username } })
+  if (existing) {
+    console.log(`[seed] 管理员 ${username} 已存在，保留原密码`)
+    return
+  }
+  const generated = !process.env.INITIAL_ADMIN_PASSWORD
+  const password = process.env.INITIAL_ADMIN_PASSWORD || (isProd ? randomBytes(9).toString('base64url') : 'admin123')
+  await prisma.staff.create({
+    data: { username, password: hashPwd(password), name: '超级管理员', role: 'super_admin' },
+  })
+  console.log(generated
+    ? `[seed] 已创建管理员 ${username}，初始密码：${password}（仅打印一次，请登录后立即修改）`
+    : `[seed] 已创建管理员 ${username}（使用 INITIAL_ADMIN_PASSWORD）`)
+
+  // 运营账号：生产环境必须显式提供 INITIAL_OPS_PASSWORD；本地演示默认 ops123456
+  const opsPassword = process.env.INITIAL_OPS_PASSWORD || (isProd ? '' : 'ops123456')
+  if (opsPassword) {
+    const ops = await prisma.staff.findUnique({ where: { username: 'ops' } })
+    if (!ops) {
+      await prisma.staff.create({
+        data: { username: 'ops', password: hashPwd(opsPassword), name: '平台运营小刘', role: 'ops' },
+      })
+      console.log('[seed] 已创建运营账号 ops')
+    }
+  }
+}
+
+async function ensureContent() {
+  // 设置只在缺失时补齐，避免每次冷启动覆盖运营修改
+  for (const [key, value] of Object.entries(SETTINGS)) {
+    const row = await prisma.setting.findUnique({ where: { key } })
+    if (!row) await prisma.setting.create({ data: { key, value } })
+  }
+  if (await prisma.faq.count() === 0) {
+    await prisma.faq.createMany({ data: FAQS })
+    console.log(`[seed] 已写入 ${FAQS.length} 条默认 FAQ`)
+  }
+}
+
+async function seedDemoData() {
+  if (!seedDemo) {
+    console.log('[seed] SEED_DEMO 未开启，跳过演示门店/司机/工单')
+    return
+  }
+
+  let stores = await prisma.store.findMany({ orderBy: { id: 'asc' } })
+  if (!stores.length) {
+    stores = await Promise.all(STORES.map(s => prisma.store.create({ data: s })))
+    console.log(`[seed] 已写入 ${stores.length} 家演示门店`)
+  }
+
+  let driver = await prisma.driver.findUnique({ where: { openid: 'demo_seed_driver' } })
+  if (!driver) {
+    driver = await prisma.driver.create({
+      data: { openid: 'demo_seed_driver', nickname: '豫A·老师傅', phone: '13937100001', role: 'private_owner', lastLoginAt: new Date() },
+    })
+  }
+
+  const rescueCount = await prisma.rescueAlert.count({ where: { driverId: driver.id } })
+  if (!rescueCount) {
+    const pending = await prisma.rescueAlert.create({
+      data: { driverId: driver.id, vehicleType: 'big_truck', plateNo: '豫A8K2F6', lat: 34.753, lng: 113.762, locationDesc: '商都路附近，右前轮爆胎', status: 'pending' },
+    })
+    const contacting = await prisma.rescueAlert.create({
+      data: { driverId: driver.id, vehicleType: 'small_car', plateNo: '豫A12345', lat: 34.748, lng: 113.771, locationDesc: '东风路天明路交叉口，胎压不足', status: 'contacting', note: '已电话联系司机，正对接万通轮胎超市', handledBy: '平台运营小刘', handledAt: new Date() },
+    })
+    await prisma.ticketLog.create({
+      data: { ticketType: 'rescue', ticketId: contacting.id, fromStatus: 'pending', toStatus: 'contacting', note: '已电话联系司机，正对接万通轮胎超市', operatorName: '平台运营小刘' },
+    })
+    await prisma.ticketLog.create({
+      data: { ticketType: 'rescue', ticketId: pending.id, fromStatus: '', toStatus: 'pending', note: '司机提交求助', operatorName: '司机' },
+    })
+  }
+  // 兼容旧版演示数据：补齐车型，后台推荐门店才有依据
+  await prisma.rescueAlert.updateMany({ where: { driverId: driver.id, vehicleType: '' }, data: { vehicleType: 'other' } })
+
+  const consultCount = await prisma.consultRequest.count({ where: { driverId: driver.id } })
+  if (!consultCount) {
+    await prisma.consultRequest.create({
+      data: {
+        driverId: driver.id, plateNo: '豫A8K2F6', carModel: '解放 J6 重卡', lat: 34.761, lng: 113.733,
+        locationDesc: '北三环高架桥下', description: '左后轮扎钉子漏气，需要流动补胎，车上满载不能久停。',
+        images: [], contactName: '刘师傅', contactPhone: '13937100001', status: 'pending',
+      },
+    })
+  }
+
+  if (stores.length && await prisma.viewLog.count({ where: { driverId: driver.id } }) === 0) {
+    await prisma.viewLog.createMany({
+      data: [
+        { driverId: driver.id, storeId: stores[0].id, action: 'view' },
+        { driverId: driver.id, storeId: stores[0].id, action: 'click' },
+        { driverId: driver.id, storeId: stores[Math.min(5, stores.length - 1)].id, action: 'view' },
+      ],
+    })
+  }
+}
+
 async function main() {
-  console.log('[seed] 开始写入演示数据 …')
-
-  // 后台员工（密码 sha256 哈希）
-  await prisma.staff.createMany({
-    data: [
-      { username: 'admin', password: hashPwd('admin123'), name: '超级管理员', role: 'super_admin' },
-      { username: 'ops', password: hashPwd('ops123456'), name: '平台运营小刘', role: 'ops' },
-    ],
-  })
-
-  // 门店
-  const stores = await Promise.all(STORES.map(s => prisma.store.create({ data: s })))
-
-  // 演示司机 + 工单 + 痕迹，让工作台一打开就有数据
-  const driver = await prisma.driver.create({
-    data: { openid: 'demo_seed_driver', nickname: '豫A·老师傅', phone: '13937100001', role: 'private_owner', lastLoginAt: new Date() },
-  })
-  await prisma.rescueAlert.create({
-    data: { driverId: driver.id, lat: 34.753, lng: 113.762, locationDesc: '商都路附近，右前轮爆胎', status: 'pending' },
-  })
-  await prisma.rescueAlert.create({
-    data: { driverId: driver.id, lat: 34.748, lng: 113.771, locationDesc: '东风路天明路交叉口，胎压不足', status: 'contacting', note: '已电话联系司机，正对接万通轮胎超市', handledBy: '平台运营小刘', handledAt: new Date() },
-  })
-  await prisma.consultRequest.create({
-    data: {
-      driverId: driver.id, plateNo: '豫A8K2F6', carModel: '解放 J6 重卡', lat: 34.761, lng: 113.733,
-      locationDesc: '北三环高架桥下', description: '左后轮扎钉子漏气，需要流动补胎，车上满载不能久停。',
-      images: [], contactName: '刘师傅', contactPhone: '13937100001', status: 'pending',
-    },
-  })
-  await prisma.viewLog.createMany({
-    data: [
-      { driverId: driver.id, storeId: stores[0].id, action: 'view' },
-      { driverId: driver.id, storeId: stores[0].id, action: 'click' },
-      { driverId: driver.id, storeId: stores[5].id, action: 'view' },
-    ],
-  })
-
-  // FAQ 与平台设置
-  await prisma.faq.createMany({ data: FAQS })
-  for (const [key, value] of Object.entries(SETTINGS))
-    await prisma.setting.create({ data: { key, value } })
-
-  console.log(`[seed] 完成：员工 2 · 门店 ${stores.length} · 司机 1 · 工单 3 · FAQ ${FAQS.length} · 设置 ${Object.keys(SETTINGS).length} 项`)
+  console.log(`[seed] 开始初始化数据（${isProd ? 'production' : 'development'}，SEED_DEMO=${seedDemo ? '1' : '0'}）`)
+  await ensureStaff()
+  await ensureContent()
+  await seedDemoData()
+  const [staff, stores, drivers, faqs] = await Promise.all([
+    prisma.staff.count(), prisma.store.count(), prisma.driver.count(), prisma.faq.count(),
+  ])
+  console.log(`[seed] 完成：员工 ${staff} · 门店 ${stores} · 司机 ${drivers} · FAQ ${faqs}`)
 }
 
 main()
