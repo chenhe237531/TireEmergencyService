@@ -41,5 +41,6 @@ jobs:
           cache: pnpm
       - run: pnpm install --frozen-lockfile
       - run: pnpm --filter tire-miniapp init-baseFiles
+      - run: pnpm --filter tire-miniapp build:mp
       - run: pnpm --filter tire-miniapp type-check
       - run: pnpm --filter tire-miniapp test:run
