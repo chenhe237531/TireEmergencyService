@@ -2,10 +2,12 @@
 import { computed, onActivated, onMounted, reactive, ref } from "vue";
 import { useRouter } from "vue-router";
 import dayjs from "dayjs";
+import { ElMessageBox } from "element-plus";
 import IconUser from "~icons/tabler/user";
 import { message } from "@/utils/message";
-import { DRIVER_ROLES, driverList } from "@/api/tire";
+import { DRIVER_ROLES, driverList, driverUpdateStatus } from "@/api/tire";
 import type { DriverItem } from "@/api/tire";
+import { useUserStoreHook } from "@/store/modules/user";
 
 defineOptions({ name: "TireDriverList" });
 
@@ -23,16 +25,16 @@ const roleTag: Record<string, TagType> = {
   store: "success"
 };
 
-/**
- * 「未完善」在后端没有对应 role 值（role 为空，接口 role 参数是精确匹配），
- * 这里用哨兵值标记，改为拉一页较大数据后在前端过滤 + 本地分页。
- */
-const EMPTY_ROLE = "__empty__";
-/** 前端过滤「未完善」和顶部统计时一次拉取的条数上限（演示库数据量小，足够覆盖） */
+/** 后端已支持 role=empty（role 字段为空），不再前端拉全量过滤 */
+const EMPTY_ROLE = "empty";
+/** 顶部统计仍需要一次拉取较大条数；列表本身走服务端分页 */
 const BULK_SIZE = 200;
 
 const loading = ref(false);
 const list = ref<DriverItem[]>([]);
+const statusLoadingId = ref<number | null>(null);
+/** 封禁/解封属于高风险操作，仅超级管理员可用 */
+const canBan = computed(() => useUserStoreHook().roles.includes("super_admin"));
 
 const query = reactive({ keyword: "", role: "" });
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 });
@@ -59,20 +61,10 @@ async function getList() {
   loading.value = true;
   try {
     const keyword = query.keyword.trim();
-    if (query.role === EMPTY_ROLE) {
-      const res = await driverList({ keyword, page: 1, pageSize: BULK_SIZE });
-      const rows = (res.list || []).filter(item => item.roleEmpty);
-      pagination.total = rows.length;
-      const maxPage = Math.max(1, Math.ceil(rows.length / pagination.pageSize));
-      if (pagination.page > maxPage) pagination.page = maxPage;
-      const start = (pagination.page - 1) * pagination.pageSize;
-      list.value = rows.slice(start, start + pagination.pageSize);
-      return;
-    }
-
+    const role = query.role;
     let res = await driverList({
       keyword,
-      role: query.role,
+      role,
       page: pagination.page,
       pageSize: pagination.pageSize
     });
@@ -82,7 +74,7 @@ async function getList() {
       pagination.page = maxPage;
       res = await driverList({
         keyword,
-        role: query.role,
+        role,
         page: maxPage,
         pageSize: pagination.pageSize
       });
@@ -138,6 +130,39 @@ function handleSizeChange(size: number) {
 
 function goViewLog(row: DriverItem) {
   router.push({ path: "/tire/viewlog", query: { driverId: row.id } });
+}
+
+async function handleToggleStatus(row: DriverItem) {
+  const next = row.status === "active" ? "blocked" : "active";
+  const action = next === "blocked" ? "封禁" : "解封";
+  try {
+    await ElMessageBox.confirm(
+      next === "blocked"
+        ? `封禁后司机「${row.nickname || row.id}」将无法提交救援/咨询，也无法继续使用小程序。确定${action}吗？`
+        : `确定解封司机「${row.nickname || row.id}」吗？解封后其可重新使用小程序。`,
+      `${action}司机`,
+      {
+        type: "warning",
+        confirmButtonText: `确定${action}`,
+        cancelButtonText: "取消",
+        confirmButtonClass:
+          next === "blocked" ? "el-button--danger" : "el-button--primary"
+      }
+    );
+  } catch {
+    return;
+  }
+  statusLoadingId.value = row.id;
+  try {
+    const res = await driverUpdateStatus(row.id, next);
+    row.status = res.status;
+    row.statusName = res.statusName;
+    message(`已${action}该司机`, { type: "success" });
+  } catch (err) {
+    message((err as Error).message || `${action}失败`, { type: "error" });
+  } finally {
+    statusLoadingId.value = null;
+  }
 }
 
 // keepAlive 页面：首次由 onMounted 拉取，之后每次切回标签页刷新，避免看到过期数据
@@ -280,6 +305,17 @@ onActivated(() => {
           </template>
         </el-table-column>
 
+        <el-table-column label="状态" width="90" align="center">
+          <template #default="{ row }">
+            <el-tag
+              :type="row.status === 'blocked' ? 'danger' : 'success'"
+              effect="light"
+            >
+              {{ row.statusName || (row.status === "blocked" ? "已封禁" : "正常") }}
+            </el-tag>
+          </template>
+        </el-table-column>
+
         <el-table-column label="注册时间" width="165">
           <template #default="{ row }">
             <span class="text-text_color_regular">{{
@@ -297,10 +333,19 @@ onActivated(() => {
           </template>
         </el-table-column>
 
-        <el-table-column label="操作" width="120" fixed="right">
+        <el-table-column label="操作" width="190" fixed="right">
           <template #default="{ row }">
             <el-button link type="primary" @click="goViewLog(asDriver(row))">
               查看痕迹
+            </el-button>
+            <el-button
+              v-if="canBan"
+              link
+              :type="row.status === 'blocked' ? 'success' : 'danger'"
+              :loading="statusLoadingId === row.id"
+              @click="handleToggleStatus(asDriver(row))"
+            >
+              {{ row.status === "blocked" ? "解封" : "封禁" }}
             </el-button>
           </template>
         </el-table-column>

@@ -10,10 +10,14 @@ const router = proxy?.$router
 router && permission.install(router)
 
 onLaunch(() => {
-  useTire().loadMe()
+  const tire = useTire()
+  tire.loadMe()
+  // 封禁 / 停用等 40003：全局退出，避免页面继续以旧身份展示
+  uni.$on('tire:auth-invalid', () => tire.logout())
 })
 onShow((options: any) => {
-  if (options?.path) navigateToInterceptor.invoke({ url: `/${options.path}`, query: options.query })
+  if (options?.path)
+    navigateToInterceptor.invoke({ url: `/${options.path}`, query: options.query })
   else navigateToInterceptor.invoke({ url: '/' })
 })
 </script>

@@ -6,9 +6,13 @@ import LayNavMix from "../lay-sidebar/NavMix.vue";
 import LaySidebarFullScreen from "../lay-sidebar/components/SidebarFullScreen.vue";
 import LaySidebarBreadCrumb from "../lay-sidebar/components/SidebarBreadCrumb.vue";
 import LaySidebarTopCollapse from "../lay-sidebar/components/SidebarTopCollapse.vue";
+import { ElMessageBox } from "element-plus";
+import { message } from "@/utils/message";
+import { changePassword } from "@/api/tire";
 
 import LogoutCircleRLine from "~icons/ri/logout-circle-r-line";
 import Setting from "~icons/ri/settings-3-line";
+import LockPasswordLine from "~icons/ri/lock-password-line";
 
 const {
   layout,
@@ -21,6 +25,38 @@ const {
   avatarsStyle,
   toggleSideBar
 } = useNav();
+
+/** 修改当前登录账号密码：成功后强制重新登录 */
+async function onPassword() {
+  try {
+    const oldPassword = await ElMessageBox.prompt("请输入原密码", "修改密码", {
+      inputType: "password",
+      confirmButtonText: "下一步",
+      cancelButtonText: "取消"
+    });
+    const newPassword = await ElMessageBox.prompt(
+      "请输入新密码（至少 8 位）",
+      "修改密码",
+      {
+        inputType: "password",
+        confirmButtonText: "确认修改",
+        cancelButtonText: "取消",
+        inputValidator: value =>
+          !value || value.length < 8 ? "新密码至少 8 位" : true
+      }
+    );
+    await changePassword({
+      oldPassword: oldPassword.value,
+      newPassword: newPassword.value
+    });
+    message("密码已修改，请重新登录", { type: "success" });
+    logout();
+  } catch (e: any) {
+    // ElMessageBox 取消时 reject 的是 "cancel"/"close"；其余为接口错误
+    if (e !== "cancel" && e !== "close")
+      message(e?.message || "密码修改失败", { type: "error" });
+  }
+}
 </script>
 
 <template>
@@ -54,6 +90,13 @@ const {
         </span>
         <template #dropdown>
           <el-dropdown-menu class="logout">
+            <el-dropdown-item @click="onPassword">
+              <IconifyIconOffline
+                :icon="LockPasswordLine"
+                style="margin: 5px"
+              />
+              修改密码
+            </el-dropdown-item>
             <el-dropdown-item @click="logout">
               <IconifyIconOffline
                 :icon="LogoutCircleRLine"

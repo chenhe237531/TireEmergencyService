@@ -69,14 +69,6 @@ const formatTime = (value?: string | null) =>
     ? dayjs(value).format("YYYY-MM-DD HH:mm")
     : "—";
 
-/** 坐标统一保留 5 位小数（约 1 米精度），任一为空则整列显示 — */
-function formatCoord(lat?: number | null, lng?: number | null) {
-  if (lat === null || lat === undefined || lng === null || lng === undefined) {
-    return "—";
-  }
-  return `${Number(lat).toFixed(5)}, ${Number(lng).toFixed(5)}`;
-}
-
 /** 无后续流转路径即为终态，处理按钮禁用（与后端状态机一致） */
 const isTerminal = (status: string) => (statusFlow[status] || []).length === 0;
 
@@ -350,17 +342,15 @@ onUnmounted(stopPolling);
             </template>
           </el-table-column>
 
-          <el-table-column label="身份" width="88" show-overflow-tooltip>
+          <el-table-column label="车型 / 车牌" width="118" show-overflow-tooltip>
             <template #default="{ row }">
-              <span
-                :class="
-                  row.driverRoleName
-                    ? ''
-                    : 'text-[var(--el-text-color-secondary)]'
-                "
+              <div class="font-medium">{{ row.vehicleTypeName || "其他" }}</div>
+              <div
+                v-if="row.plateNo"
+                class="mt-0.5 text-xs tabular-nums text-[var(--el-text-color-secondary)]"
               >
-                {{ row.driverRoleName || "—" }}
-              </span>
+                {{ row.plateNo }}
+              </div>
             </template>
           </el-table-column>
 
@@ -383,21 +373,27 @@ onUnmounted(stopPolling);
             </template>
           </el-table-column>
 
-          <el-table-column label="坐标" width="112" show-overflow-tooltip>
+          <el-table-column label="指派门店" min-width="150" show-overflow-tooltip>
             <template #default="{ row }">
-              <span
-                class="whitespace-nowrap text-xs tabular-nums text-[var(--el-text-color-regular)]"
-              >
-                {{ formatCoord(row.lat, row.lng) }}
+              <div v-if="row.assignedStore" class="font-medium">
+                {{ row.assignedStore.name }}
+              </div>
+              <span v-else class="text-xs text-[var(--el-text-color-secondary)]">
+                未指派
               </span>
             </template>
           </el-table-column>
 
-          <el-table-column label="状态" width="88">
+          <el-table-column label="状态" width="118">
             <template #default="{ row }">
-              <el-tag :type="tagType(row.status)" effect="light">
-                {{ row.statusName || ORDER_STATUS[row.status] || row.status }}
-              </el-tag>
+              <div class="flex items-center gap-1">
+                <el-tag :type="tagType(row.status)" effect="light">
+                  {{ row.statusName || ORDER_STATUS[row.status] || row.status }}
+                </el-tag>
+                <el-tag v-if="row.overdue" type="danger" effect="dark" size="small">
+                  超时
+                </el-tag>
+              </div>
             </template>
           </el-table-column>
 

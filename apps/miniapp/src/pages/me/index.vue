@@ -36,6 +36,8 @@ const phoneSheet = ref(false)
 const phoneVal = ref('')
 const phoneErr = ref('')
 const phoneLoading = ref(false)
+/** 演示环境允许手动输入手机号；真实微信环境走 getPhoneNumber 授权 */
+const demoLogin = ref(true)
 
 onShow(async () => {
   if (!tire.loggedIn)
@@ -51,6 +53,7 @@ async function loadPhoneSetting() {
   try {
     const s = await http.get('/app/settings', undefined, { silent: true })
     servicePhone.value = s?.servicePhone || ''
+    demoLogin.value = s?.demoLogin !== false
   }
   catch {
     // 客服电话拿不到时，菜单里仍然可以进入「联系客服」页查看
@@ -78,6 +81,12 @@ function openPoster() {
   go('/pkg-share/poster')
 }
 
+function openRecords() {
+  if (!requireLogin())
+    return
+  go('/pkg-me/records')
+}
+
 function openPhoneSheet() {
   if (!requireLogin())
     return
@@ -86,7 +95,17 @@ function openPhoneSheet() {
   phoneSheet.value = true
 }
 
+async function finishBind() {
+  await tire.loadMe()
+  phoneSheet.value = false
+  toast('手机号已绑定')
+}
+
 async function bindPhone() {
+  if (!demoLogin.value) {
+    phoneErr.value = '请使用微信手机号快捷绑定'
+    return
+  }
   const v = phoneVal.value.trim()
   if (!/^1\d{10}$/.test(v)) {
     phoneErr.value = '请输入 11 位手机号'
@@ -98,12 +117,33 @@ async function bindPhone() {
   phoneErr.value = ''
   try {
     await http.post('/app/auth/phone', { phone: v }, { silent: true })
-    await tire.loadMe()
-    phoneSheet.value = false
-    toast('手机号已绑定')
+    await finishBind()
   }
   catch (e: any) {
     phoneErr.value = e?.message || '绑定失败，请稍后再试'
+  }
+  finally {
+    phoneLoading.value = false
+  }
+}
+
+/** 微信手机号快捷验证 */
+async function onWxPhone(e: any) {
+  const code = e?.detail?.code
+  if (!code) {
+    phoneErr.value = '未授权手机号，请重试'
+    return
+  }
+  if (phoneLoading.value)
+    return
+  phoneLoading.value = true
+  phoneErr.value = ''
+  try {
+    await http.post('/app/auth/phone', { wxPhoneCode: code }, { silent: true })
+    await finishBind()
+  }
+  catch (err: any) {
+    phoneErr.value = err?.message || '手机号验证失败，请稍后再试'
   }
   finally {
     phoneLoading.value = false
@@ -232,6 +272,7 @@ function logout() {
       <!-- 菜单 -->
       <view class="t-cell-group mt-3">
         <TCell title="个人资料" icon="i-tabler-id" @click="openProfile" />
+        <TCell title="我的记录" icon="i-tabler-clipboard-list" value="救援 / 咨询进度" @click="openRecords" />
         <TCell title="分享海报" icon="i-tabler-share" @click="openPoster" />
         <TCell title="常见问题" icon="i-tabler-help-circle" @click="go('/pkg-me/faq')" />
         <TCell title="联系客服" icon="i-tabler-headset" :value="servicePhone || '电话 / 微信'" @click="go('/pkg-me/contact')" />
@@ -277,10 +318,27 @@ function logout() {
       :title="tire.me?.phone ? '更换手机号' : '绑定手机号'"
       desc="救援时客服通过这个号码联系你，请填写常用号码。"
       confirm-text="保存"
+      :show-confirm="demoLogin"
       :confirm-loading="phoneLoading"
       @confirm="bindPhone"
     >
-      <view class="t-field" style="border-bottom: none; padding-top: 0">
+      <!-- #ifdef MP-WEIXIN -->
+      <view v-if="!demoLogin" class="t-field" style="border-bottom: none; padding-top: 0">
+        <button
+          class="t-btn t-btn--primary t-btn--lg t-btn--block"
+          style="border: none"
+          open-type="getPhoneNumber"
+          @getphonenumber="onWxPhone"
+        >
+          {{ tire.me?.phone ? '微信手机号快捷更换' : '微信手机号快捷绑定' }}
+        </button>
+        <view class="t-hint mt-2">
+          微信授权后自动绑定，无需手动输入
+        </view>
+      </view>
+      <!-- #endif -->
+
+      <view v-if="demoLogin" class="t-field" style="border-bottom: none; padding-top: 0">
         <view class="t-field__hd">
           <text class="t-label t-label--req">手机号</text>
         </view>
@@ -290,6 +348,11 @@ function logout() {
           <text>{{ phoneErr }}</text>
         </view>
       </view>
+      <!-- #ifndef MP-WEIXIN -->
+      <view v-if="!demoLogin" class="t-hint">
+        当前环境不支持微信手机号授权，请在小程序内完成绑定
+      </view>
+      <!-- #endif -->
     </TSheet>
   </view>
 </template>

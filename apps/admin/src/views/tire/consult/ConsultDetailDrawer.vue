@@ -300,6 +300,25 @@ async function handleSubmit() {
             </el-descriptions-item>
           </el-descriptions>
 
+          <div v-if="detail.logs?.length" class="mt-4">
+            <div class="mb-2 text-sm font-medium">操作流水</div>
+            <el-timeline>
+              <el-timeline-item
+                v-for="log in detail.logs"
+                :key="log.id"
+                :timestamp="formatTime(log.createdAt)"
+                placement="top"
+              >
+                <div class="text-sm font-medium">
+                  {{ log.fromStatus ? `${ORDER_STATUS[log.fromStatus] || log.fromStatus} → ` : "" }}{{ ORDER_STATUS[log.toStatus] || log.toStatus || "创建" }}
+                </div>
+                <div class="mt-0.5 text-xs text-[var(--el-text-color-secondary)]">
+                  {{ log.operatorName || "系统" }}{{ log.note ? ` · ${log.note}` : "" }}
+                </div>
+              </el-timeline-item>
+            </el-timeline>
+          </div>
+
           <el-alert
             v-if="isTerminal"
             class="mt-3"

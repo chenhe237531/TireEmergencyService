@@ -63,7 +63,8 @@ let redirectingLogin = false
 
 export function request<T = any>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE', url: string, data?: any, opts: ReqOpts = {}): Promise<T> {
   const token = getToken()
-  if (opts.loading) uni.showLoading({ title: opts.loading, mask: true })
+  if (opts.loading)
+    uni.showLoading({ title: opts.loading, mask: true })
   return new Promise((resolve, reject) => {
     send({
       url,
@@ -72,16 +73,30 @@ export function request<T = any>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DEL
       header: { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       success: (res) => {
         const body: any = res.data
-        if (opts.loading) uni.hideLoading()
-        if (body && body.code === 0) return resolve(body.data as T)
+        if (opts.loading)
+          uni.hideLoading()
+        if (body && body.code === 0)
+          return resolve(body.data as T)
         const code = body?.code ?? res.statusCode * 100
         const msg = body?.message || '网络不太好，请稍后再试'
         if (code === 40001) {
           uni.removeStorageSync(TOKEN_KEY)
           if (!opts.silent && !redirectingLogin) {
             redirectingLogin = true
-            uni.navigateTo({ url: '/pkg-auth/login', complete: () => setTimeout(() => { redirectingLogin = false }, 800) })
+            uni.navigateTo({
+              url: '/pkg-auth/login',
+              complete: () => setTimeout(() => {
+                redirectingLogin = false
+              }, 800),
+            })
           }
+        }
+        else if (code === 40003) {
+          // 账号被封禁 / 停用：清掉本地令牌并让全局用户态退出，避免继续用旧身份操作
+          uni.removeStorageSync(TOKEN_KEY)
+          uni.$emit('tire:auth-invalid', msg)
+          if (!opts.silent)
+            uni.showToast({ title: msg, icon: 'none', duration: 2500 })
         }
         else if (!opts.silent) {
           uni.showToast({ title: msg, icon: 'none', duration: 2500 })
@@ -89,8 +104,10 @@ export function request<T = any>(method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DEL
         reject(new ApiError(code, msg, body?.data))
       },
       fail: () => {
-        if (opts.loading) uni.hideLoading()
-        if (!opts.silent) uni.showToast({ title: '网络不太好，请稍后再试', icon: 'none' })
+        if (opts.loading)
+          uni.hideLoading()
+        if (!opts.silent)
+          uni.showToast({ title: '网络不太好，请稍后再试', icon: 'none' })
         reject(new ApiError(-1, 'network'))
       },
     })
@@ -119,7 +136,12 @@ export function uploadImage(filePath: string): Promise<{ url: string, size: numb
       success: (res) => {
         try {
           const body = typeof res.data === 'string' ? JSON.parse(res.data) : res.data
-          if (body?.code === 0) return resolve(body.data)
+          if (body?.code === 0)
+            return resolve(body.data)
+          if (body?.code === 40003) {
+            uni.removeStorageSync(TOKEN_KEY)
+            uni.$emit('tire:auth-invalid', body?.message || '账号已被封禁')
+          }
           uni.showToast({ title: body?.message || '上传失败', icon: 'none' })
           reject(new ApiError(body?.code ?? -1, body?.message || '上传失败'))
         }

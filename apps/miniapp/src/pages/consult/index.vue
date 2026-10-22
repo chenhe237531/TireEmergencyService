@@ -369,7 +369,7 @@ function resetForm() {
 
       <view class="mt-3 flex items-start gap-1.5 px-1 text-[11px] text-[#A8A199] leading-relaxed">
         <text class="i-tabler-shield-check text-[13px]" />
-        <text>提交即表示同意平台为本次服务联系你；未登录也可提交，登录后可在「我的」查看记录。</text>
+        <text>提交即表示同意平台为本次服务联系你；未登录也可提交，登录后可在「我的 - 我的记录」查看进度。</text>
       </view>
     </view>
 

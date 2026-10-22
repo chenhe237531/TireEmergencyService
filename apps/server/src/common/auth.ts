@@ -2,11 +2,17 @@ import type { CanActivate, ExecutionContext } from '@nestjs/common'
 import { createParamDecorator, Injectable, SetMetadata, UseGuards, applyDecorators } from '@nestjs/common'
 import { Reflector } from '@nestjs/core'
 import jwt from 'jsonwebtoken'
+import { PrismaService } from './prisma.service'
 import { BizError, Err } from './response'
 
-const SECRET = process.env.JWT_SECRET || 'tire-demo-secret'
-if (!process.env.JWT_SECRET && process.env.NODE_ENV === 'production')
-  console.warn('[tire] 未设置 JWT_SECRET，正在使用演示默认密钥，令牌可被伪造；请在部署环境变量中配置随机密钥')
+/**
+ * 生产环境必须显式配置 JWT_SECRET，缺失时直接启动失败，避免用公开演示密钥签发可伪造令牌。
+ * 本地开发保留默认值，便于开箱运行。
+ */
+const SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'tire-demo-secret')
+if (!SECRET) throw new Error('[tire] 生产环境必须设置 JWT_SECRET（随机长字符串）')
+if (!process.env.JWT_SECRET && process.env.NODE_ENV !== 'production')
+  console.warn('[tire] 未设置 JWT_SECRET，本地开发使用默认密钥；生产环境必须配置')
 
 export interface DriverUser { aud: 'app', id: number }
 export interface StaffUser { aud: 'admin', id: number, role: string, name: string }
@@ -31,13 +37,25 @@ function parse(req: any) {
 
 @Injectable()
 export class AudGuard implements CanActivate {
-  constructor(private reflector: Reflector) {}
-  canActivate(ctx: ExecutionContext) {
+  constructor(private reflector: Reflector, private prisma: PrismaService) {}
+
+  async canActivate(ctx: ExecutionContext) {
     const aud = this.reflector.getAllAndOverride<string>('aud', [ctx.getHandler(), ctx.getClass()])
     const optional = this.reflector.getAllAndOverride<boolean>('optionalAuth', [ctx.getHandler(), ctx.getClass()])
     const req = ctx.switchToHttp().getRequest()
     const p = parse(req)
     if (p && (!aud || p.aud === aud)) {
+      // 每次请求都校验账号状态：封禁司机 / 停用员工立即失效，不能靠旧令牌继续操作
+      if (p.aud === 'app') {
+        const driver = await this.prisma.driver.findUnique({ where: { id: p.id }, select: { status: true } })
+        if (!driver) throw Err.unauth()
+        if (driver.status !== 'active') throw new BizError(40003, '账号已被封禁，请联系平台客服')
+      }
+      else if (p.aud === 'admin') {
+        const staff = await this.prisma.staff.findUnique({ where: { id: p.id }, select: { status: true } })
+        if (!staff) throw Err.unauth()
+        if (staff.status !== 'active') throw new BizError(40003, '账号已停用，请联系超级管理员')
+      }
       req.user = p
       return true
     }
