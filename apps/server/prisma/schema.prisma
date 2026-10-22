@@ -86,9 +86,11 @@ model RescueAlert {
   assignedStoreId Int?
   assignedStore   Store?  @relation(fields: [assignedStoreId], references: [id])
   assignedAt   DateTime?
+  clientRequestId String? // 客户端幂等键（UUID）；旧客户端不传时为空，不参与去重
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  @@unique([driverId, clientRequestId])
   @@index([driverId, createdAt])
   @@index([status, createdAt])
 }
@@ -111,9 +113,11 @@ model ConsultRequest {
   note         String    @default("") // mysql: @db.Text
   handledBy    String    @default("")
   handledAt    DateTime?
+  clientRequestId String? // 客户端幂等键（UUID）；游客或旧客户端为空
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  @@unique([driverId, clientRequestId])
   @@index([driverId, createdAt])
 }
 

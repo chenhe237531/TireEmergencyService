@@ -30,6 +30,21 @@ export const DRIVER_ROLES: Record<string, string> = {
 const ACTIVE_RESCUE_STATUS = ['pending', 'contacting']
 const DUPLICATE_WINDOW_MS = 2 * 60 * 1000
 
+/**
+ * 客户端幂等键：8~64 位字母数字/UUID。
+ * 缺失或格式非法一律按旧客户端处理，继续走原有的 2 分钟窗口去重。
+ */
+function clientRequestId(v: unknown): string | null {
+  if (typeof v !== 'string') return null
+  const s = v.trim()
+  return /^[\w-]{8,64}$/.test(s) ? s : null
+}
+
+/** 幂等唯一索引冲突（并发提交时落败的一方改为读取原记录） */
+function isDuplicateKey(e: unknown): boolean {
+  return typeof e === 'object' && e !== null && (e as { code?: string }).code === 'P2002'
+}
+
 /** 小程序列表分页：最多 50 条/页，避免一次拉全量 */
 function pageArgs(q: { page?: string, pageSize?: string }) {
   const page = Math.max(1, Number(q.page) || 1)
@@ -188,7 +203,7 @@ export class AppController {
   @Post('rescue-alert')
   async rescueAlert(
     @CurrentUser() u: DriverUser,
-    @Body() body: { vehicleType?: string, plateNo?: string, lat?: number, lng?: number, locationDesc?: string },
+    @Body() body: { vehicleType?: string, plateNo?: string, lat?: number, lng?: number, locationDesc?: string, clientRequestId?: string },
   ) {
     const d = await this.prisma.driver.findUnique({ where: { id: u.id } })
     if (!d) throw Err.unauth()
@@ -206,29 +221,54 @@ export class AppController {
     // 至少要有位置描述或坐标，否则后台只拿到一个手机号，无法派单
     if (!locationDesc && (lat == null || lng == null)) throw Err.bad('请补充当前位置描述')
 
-    // 防止连点 / 重复提交：同一司机 2 分钟内已有进行中的求助时不再新建
-    const recent = await this.prisma.rescueAlert.findFirst({
-      where: {
-        driverId: u.id,
-        status: { in: ACTIVE_RESCUE_STATUS },
-        createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
-      },
-      orderBy: { id: 'desc' },
-      select: { id: true },
-    })
-    if (recent) throw new BizError(40900, '刚刚已提交过求助，请勿重复操作', { id: recent.id })
+    const requestId = clientRequestId(body.clientRequestId)
+    if (requestId) {
+      // 带幂等键：同司机同键直接返回原工单，不受 2 分钟窗口影响（弱网重试可能隔得更久）
+      const existing = await this.prisma.rescueAlert.findFirst({
+        where: { driverId: u.id, clientRequestId: requestId },
+        select: { id: true, status: true, createdAt: true },
+      })
+      if (existing) return existing
+    }
+    else {
+      // 旧客户端没有幂等键：保留同一司机 2 分钟内已有进行中求助时不新建的保护
+      const recent = await this.prisma.rescueAlert.findFirst({
+        where: {
+          driverId: u.id,
+          status: { in: ACTIVE_RESCUE_STATUS },
+          createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+        },
+        orderBy: { id: 'desc' },
+        select: { id: true },
+      })
+      if (recent) throw new BizError(40900, '刚刚已提交过求助，请勿重复操作', { id: recent.id })
+    }
 
-    const row = await this.prisma.rescueAlert.create({
-      data: {
-        driverId: u.id,
-        vehicleType,
-        plateNo,
-        lat,
-        lng,
-        locationDesc,
-      },
-    })
-    return { id: row.id, status: row.status, createdAt: row.createdAt }
+    try {
+      const row = await this.prisma.rescueAlert.create({
+        data: {
+          driverId: u.id,
+          vehicleType,
+          plateNo,
+          lat,
+          lng,
+          locationDesc,
+          clientRequestId: requestId,
+        },
+      })
+      return { id: row.id, status: row.status, createdAt: row.createdAt }
+    }
+    catch (e) {
+      // 并发重试同时到达：唯一索引只放行一条，落败方读回原工单
+      if (requestId && isDuplicateKey(e)) {
+        const existing = await this.prisma.rescueAlert.findFirst({
+          where: { driverId: u.id, clientRequestId: requestId },
+          select: { id: true, status: true, createdAt: true },
+        })
+        if (existing) return existing
+      }
+      throw e
+    }
   }
 
   /** 我的救援记录：只返回本人数据，不暴露内部备注 */
@@ -337,28 +377,51 @@ export class AppController {
     @CurrentUser() u: DriverUser | undefined,
     @Body() body: {
       plateNo?: string, carModel?: string, lat?: number, lng?: number, locationDesc?: string,
-      description?: string, images?: string[], contactName?: string, contactPhone?: string,
+      description?: string, images?: string[], contactName?: string, contactPhone?: string, clientRequestId?: string,
     },
   ) {
     if (!body.contactName?.trim()) throw Err.bad('请填写姓名')
     if (!/^1\d{10}$/.test(body.contactPhone || '')) throw Err.bad('请填写正确的联系电话')
     if (!body.description?.trim()) throw Err.bad('请描述故障情况')
     const images = Array.isArray(body.images) ? body.images.filter(i => typeof i === 'string' && i.startsWith('/uploads/')).slice(0, 9) : []
-    const row = await this.prisma.consultRequest.create({
-      data: {
-        driverId: u?.id ?? null,
-        plateNo: (body.plateNo || '').trim().slice(0, 20),
-        carModel: (body.carModel || '').trim().slice(0, 50),
-        lat: body.lat ?? null,
-        lng: body.lng ?? null,
-        locationDesc: (body.locationDesc || '').trim().slice(0, 200),
-        description: body.description.trim().slice(0, 1000),
-        images,
-        contactName: body.contactName.trim().slice(0, 30),
-        contactPhone: body.contactPhone!.trim(),
-      },
-    })
-    return { id: row.id, status: row.status }
+    const requestId = clientRequestId(body.clientRequestId)
+    const driverId = u?.id ?? null
+    // 游客没有司机标识，幂等键不生效（游客可多次替不同人咨询）
+    if (driverId && requestId) {
+      const existing = await this.prisma.consultRequest.findFirst({
+        where: { driverId, clientRequestId: requestId },
+        select: { id: true, status: true },
+      })
+      if (existing) return existing
+    }
+    try {
+      const row = await this.prisma.consultRequest.create({
+        data: {
+          driverId,
+          plateNo: (body.plateNo || '').trim().slice(0, 20),
+          carModel: (body.carModel || '').trim().slice(0, 50),
+          lat: body.lat ?? null,
+          lng: body.lng ?? null,
+          locationDesc: (body.locationDesc || '').trim().slice(0, 200),
+          description: body.description.trim().slice(0, 1000),
+          images,
+          contactName: body.contactName.trim().slice(0, 30),
+          contactPhone: body.contactPhone!.trim(),
+          clientRequestId: driverId ? requestId : null,
+        },
+      })
+      return { id: row.id, status: row.status }
+    }
+    catch (e) {
+      if (driverId && requestId && isDuplicateKey(e)) {
+        const existing = await this.prisma.consultRequest.findFirst({
+          where: { driverId, clientRequestId: requestId },
+          select: { id: true, status: true },
+        })
+        if (existing) return existing
+      }
+      throw e
+    }
   }
 
   /** 平台设置：客服电话 / 二维码 / 关于我们 / 协议 / 分享文案；demoLogin 供端上决定手机号授权方式 */

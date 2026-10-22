@@ -67,3 +67,44 @@ export function deviceId() {
   }
   return id as string
 }
+
+/**
+ * 提交幂等键：首次提交前生成 UUID 并落盘，弱网重试 / 杀进程后重试都复用同一个值；
+ * 提交成功后调用 clearSubmitRequestId，下一次提交再生成新键。
+ */
+export type SubmitRequestKey = 'rescue' | 'consult'
+
+const SUBMIT_REQUEST_ID_PREFIX = 'tire_submit_request_id_'
+
+function uuidv4(): string {
+  const c = (globalThis as any).crypto
+  if (c && typeof c.randomUUID === 'function')
+    return c.randomUUID()
+  const hex = '0123456789abcdef'
+  let s = ''
+  for (let i = 0; i < 36; i++) {
+    if (i === 8 || i === 13 || i === 18 || i === 23)
+      s += '-'
+    else if (i === 14)
+      s += '4'
+    else if (i === 19)
+      s += hex[(Math.random() * 4 | 0) + 8]
+    else
+      s += hex[Math.random() * 16 | 0]
+  }
+  return s
+}
+
+export function submitRequestId(key: SubmitRequestKey): string {
+  const storageKey = SUBMIT_REQUEST_ID_PREFIX + key
+  let id = uni.getStorageSync(storageKey)
+  if (!id) {
+    id = uuidv4()
+    uni.setStorageSync(storageKey, id)
+  }
+  return id as string
+}
+
+export function clearSubmitRequestId(key: SubmitRequestKey) {
+  uni.removeStorageSync(SUBMIT_REQUEST_ID_PREFIX + key)
+}

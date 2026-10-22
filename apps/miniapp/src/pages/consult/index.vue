@@ -14,7 +14,7 @@ import { http, uploadImage } from '@/tire/request'
 import { canInitThirdPartySdk } from '@/tire/app/privacy'
 import { useShare } from '@/tire/share'
 import { useTire } from '@/tire/store'
-import { toast } from '@/tire/utils'
+import { clearSubmitRequestId, submitRequestId, toast } from '@/tire/utils'
 
 interface Photo { temp: string, url: string, status: 'uploading' | 'done' | 'fail' }
 
@@ -172,7 +172,10 @@ async function submit() {
       images: photos.value.filter(p => p.status === 'done').map(p => p.url),
       contactName: contactName.value.trim(),
       contactPhone: contactPhone.value.trim(),
+      // 弱网重试复用同一个键，登录司机不会重复建单
+      clientRequestId: submitRequestId('consult'),
     })
+    clearSubmitRequestId('consult')
     uni.showModal({
       title: '已提交',
       content: '平台客服将尽快与您电话联系，请保持手机畅通。',
