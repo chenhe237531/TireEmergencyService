@@ -13,6 +13,7 @@ import TSheet from '@/components/tire/TSheet.vue'
 import TSkeleton from '@/components/tire/TSkeleton.vue'
 import TState from '@/components/tire/TState.vue'
 import { http } from '@/tire/request'
+import { canInitThirdPartySdk } from '@/tire/app/privacy'
 import { useShare } from '@/tire/share'
 import { useTire } from '@/tire/store'
 import { call, go, toast } from '@/tire/utils'
@@ -125,6 +126,15 @@ async function loadSettings() {
 
 /** 定位：先展示全部门店；5 秒无回调按默认城市降级，避免首页永久停在「定位中」 */
 function locate() {
+  // #ifdef APP-PLUS
+  // 未同意隐私政策前不初始化高德定位 / 地图 SDK
+  if (!canInitThirdPartySdk()) {
+    coords.value = { ...DEFAULT_POS }
+    locState.value = 'denied'
+    locLabel.value = '同意隐私政策后可定位，展示默认城市门店'
+    return
+  }
+  // #endif
   if (locTimer)
     clearTimeout(locTimer)
   locState.value = 'locating'
