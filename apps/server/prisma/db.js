@@ -99,6 +99,49 @@ async function withInitLock(provider, url, fn) {
 
 const COMMANDS = ['generate', 'push', 'seed', 'init', 'reset', 'schema']
 
+/**
+ * 首次部署时业务库可能还不存在（云托管 MySQL 开通后不会自动建业务库）：
+ * 先连 information_schema 查一次，缺库就 CREATE DATABASE（utf8mb4），再交给 db push 同步表结构。
+ * 建库失败不中断启动，只告警——大概率是账号没有 CREATE 权限，此时按提示手动建库即可。
+ */
+async function ensureDatabase(url) {
+  const u = new URL(url)
+  const db = decodeURIComponent(u.pathname.replace(/^\//, ''))
+  if (!db) return
+  if (!/^[\w$-]+$/.test(db)) {
+    console.warn(`[db] 库名 "${db}" 含非常规字符，跳过自动建库`)
+    return
+  }
+  const { PrismaClient } = require('@prisma/client')
+  // 业务库还不存在时连不上，改连 information_schema（只用一个连接）
+  const admin = new URL(url)
+  admin.pathname = '/information_schema'
+  admin.searchParams.set('connection_limit', '1')
+  const client = new PrismaClient({ datasourceUrl: admin.toString() })
+  try {
+    const rows = await client.$queryRawUnsafe(
+      'SELECT SCHEMA_NAME AS name FROM information_schema.SCHEMATA WHERE SCHEMA_NAME = ?',
+      db,
+    )
+    if (rows.length) {
+      console.log(`[db] 数据库 ${db} 已存在`)
+      return
+    }
+    await client.$executeRawUnsafe(`CREATE DATABASE \`${db}\` DEFAULT CHARACTER SET utf8mb4`)
+    console.log(`[db] 已自动创建数据库 ${db}（utf8mb4）`)
+  }
+  catch (e) {
+    // Prisma 的报错常带多行堆栈，压成一行再打，方便在云托管日志里一眼看到
+    const reason = String(e.message || e).replace(/\s+/g, ' ').trim().slice(0, 200)
+    console.warn(`[db] 自动建库未完成：${reason}`)
+    console.warn(`[db] 若库确实不存在，请手动执行：CREATE DATABASE \`${db}\` DEFAULT CHARACTER SET utf8mb4;`)
+  }
+  finally {
+    await client.$disconnect().catch(() => {})
+  }
+}
+
+
 async function main() {
   const cmd = process.argv[2]
   if (!COMMANDS.includes(cmd)) {
@@ -122,6 +165,7 @@ async function main() {
       generate(schema)
       break
     case 'push':
+      if (provider === 'mysql') await ensureDatabase(url)
       prisma(['db', 'push', '--skip-generate'], schema)
       break
     case 'seed':
@@ -129,6 +173,8 @@ async function main() {
       break
     case 'init':
       await withInitLock(provider, url, async () => {
+        // 建库放在锁内：多实例同时冷启动时也只会有一个真正执行 DDL
+        if (provider === 'mysql') await ensureDatabase(url)
         prisma(['db', 'push', '--skip-generate'], schema)
         // seed 内部按表幂等补齐：生产只保证管理员/设置/FAQ，演示数据由 SEED_DEMO 控制
         tsNode('prisma/seed.ts')
@@ -141,6 +187,7 @@ async function main() {
         rmSync(isAbsolute(file) ? file : join(__dirname, file), { force: true })
         prisma(['db', 'push', '--skip-generate'], schema)
       } else {
+        await ensureDatabase(url)
         prisma(['db', 'push', '--skip-generate', '--force-reset'], schema)
       }
       tsNode('prisma/seed.ts')

@@ -135,7 +135,9 @@ pnpm dev:h5       # 小程序 H5 版：http://localhost:9100
 
 ## 部署
 
-**根目录 `Dockerfile`（云托管 / 通用容器）**：构建 API + 后台 + 小程序 H5，默认 `DB_PROVIDER=mysql`、`PORT=80`。启动时同步表结构（多实例用 MySQL `GET_LOCK` 串行）并幂等初始化数据：生产只保证管理员、平台设置与 FAQ；`SEED_DEMO=1` 时才写入演示门店/司机/工单。访问 `/` 为后台、`/h5/` 为小程序 H5 版、`/api/v1` 为接口。`container.config.json` 用于云托管模板部署的初始配置，服务建好后以控制台设置为准。
+**手动上传代码包（微信云托管控制台）**：`deploy/cloudrun-zip.sh` 生成 `deploy/.bundle/tire-cloudrun.zip`（约 1 MiB，云托管上传上限 2 MiB，脚本会校验体积）。控制台里「选择方式」选手动上传、「端口」填 `80`、「目标目录」留空、Dockerfile 填 `Dockerfile`；环境变量按 `deploy/cloudrun.env.example` 在首次发布的「高级设置」里填。**云托管 MySQL 单独开通时不会自动注入 `MYSQL_ADDRESS` / `MYSQL_USERNAME` / `MYSQL_PASSWORD`，必须手填，地址要带端口**；密码含 `% ^ $ *` 等字符时不要手拼 `DATABASE_URL`（未做百分号编码会解析失败），交给 `MYSQL_*` 三个变量拼接。**首次启动会自动建库、建表并写入管理员/设置/FAQ，不需要提前在 MySQL 里建库**；只有账号缺少 `CREATE` 权限时才需要手动执行一次建库语句。
+
+**根目录 `Dockerfile`（云托管 / 通用容器）**：构建 API + 后台 + 小程序 H5，默认 `DB_PROVIDER=mysql`、`PORT=80`。启动时缺库会自动建库（`CREATE DATABASE … utf8mb4`，账号无 `CREATE` 权限时降级为提示手动建库），再同步表结构（多实例用 MySQL `GET_LOCK` 串行）并幂等初始化数据：生产只保证管理员、平台设置与 FAQ；`SEED_DEMO=1` 时才写入演示门店/司机/工单。访问 `/` 为后台、`/h5/` 为小程序 H5 版、`/api/v1` 为接口。`container.config.json` 用于云托管模板部署的初始配置，服务建好后以控制台设置为准。
 
 生产部署必须配置：
 
