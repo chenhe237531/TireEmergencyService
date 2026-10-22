@@ -27,7 +27,4 @@ cp -R "$ROOT/apps/admin/dist" "$BUNDLE/admin/dist"
 cp -R "$ROOT/apps/miniapp/dist/build/h5" "$BUNDLE/miniapp/dist/build/h5"
 cp "$ROOT/deploy/remote-setup.sh" "$ROOT/deploy/Dockerfile" "$ROOT/deploy/docker-compose.yml" "$ROOT/deploy/docker-entrypoint.sh" "$ROOT/deploy/.dockerignore" "$ROOT/deploy/nginx.conf" "$BUNDLE/"
 
-# 部署包默认按 MySQL 构建：预生成 MySQL 版 Prisma Client，避免云托管冷启动时再 generate 一次
-sed -i '' 's/^ARG DB_PROVIDER=sqlite$/ARG DB_PROVIDER=mysql/' "$BUNDLE/Dockerfile"
-
 echo "==> 完成：$BUNDLE"

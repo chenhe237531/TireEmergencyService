@@ -15,6 +15,8 @@ const props = withDefaults(defineProps<{
   confirmDisabled?: boolean
   /** 只做提示时隐藏取消按钮 */
   hideCancel?: boolean
+  /** 内部已有主操作按钮（如微信手机号授权）时隐藏底部确认按钮 */
+  showConfirm?: boolean
 }>(), {
   desc: '',
   confirmText: '确认',
@@ -22,6 +24,7 @@ const props = withDefaults(defineProps<{
   confirmLoading: false,
   confirmDisabled: false,
   hideCancel: false,
+  showConfirm: true,
 })
 
 const emit = defineEmits<{
@@ -55,7 +58,7 @@ function close() {
       <TButton v-if="!hideCancel" type="ghost" size="lg" :disabled="confirmLoading" @click="close">
         {{ cancelText }}
       </TButton>
-      <TButton size="lg" :loading="confirmLoading" :disabled="confirmDisabled" @click="emit('confirm')">
+      <TButton v-if="showConfirm" size="lg" :loading="confirmLoading" :disabled="confirmDisabled" @click="emit('confirm')">
         {{ confirmText }}
       </TButton>
     </view>

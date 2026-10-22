@@ -39,16 +39,28 @@ const phoneSheet = ref(false)
 const phoneVal = ref('')
 const phoneErr = ref('')
 const phoneLoading = ref(false)
+const demoLogin = ref(true)
 
 const avatarSrc = computed(() => (avatarUrl.value ? absUrl(avatarUrl.value) : '/static/images/default-avatar.png'))
 const roleName = computed(() => (role.value ? DRIVER_ROLE_NAMES[role.value] || '未设置' : '未设置'))
 const dirty = computed(() => JSON.stringify([nickname.value.trim(), avatarUrl.value, role.value]) !== snapshot.value)
+
+async function loadDemoFlag() {
+  try {
+    const s = await http.get('/app/settings', undefined, { silent: true })
+    demoLogin.value = s?.demoLogin !== false
+  }
+  catch {
+    // 设置读取失败不影响资料编辑，手机号绑定会由后端再次校验
+  }
+}
 
 onLoad(async () => {
   if (!tire.loggedIn) {
     loading.value = false
     return
   }
+  loadDemoFlag()
   await tire.loadMe()
   const me = tire.me || {}
   nickname.value = me.nickname || ''
@@ -97,7 +109,18 @@ function openPhoneSheet() {
   phoneSheet.value = true
 }
 
+async function finishBind(next: string) {
+  phone.value = next
+  await tire.loadMe()
+  phoneSheet.value = false
+  toast('手机号已更新')
+}
+
 async function bindPhone() {
+  if (!demoLogin.value) {
+    phoneErr.value = '请使用微信手机号快捷绑定'
+    return
+  }
   const v = phoneVal.value.trim()
   if (!/^1\d{10}$/.test(v)) {
     phoneErr.value = '请输入 11 位手机号'
@@ -109,13 +132,34 @@ async function bindPhone() {
   phoneErr.value = ''
   try {
     await http.post('/app/auth/phone', { phone: v }, { silent: true })
-    phone.value = v
-    await tire.loadMe()
-    phoneSheet.value = false
-    toast('手机号已更新')
+    await finishBind(v)
   }
   catch (e: any) {
     phoneErr.value = e?.message || '更新失败，请稍后再试'
+  }
+  finally {
+    phoneLoading.value = false
+  }
+}
+
+/** 微信手机号快捷验证 */
+async function onWxPhone(e: any) {
+  const code = e?.detail?.code
+  if (!code) {
+    phoneErr.value = '未授权手机号，请重试'
+    return
+  }
+  if (phoneLoading.value)
+    return
+  phoneLoading.value = true
+  phoneErr.value = ''
+  try {
+    await http.post('/app/auth/phone', { wxPhoneCode: code }, { silent: true })
+    const me = await tire.loadMe()
+    await finishBind(me?.phone || phone.value)
+  }
+  catch (err: any) {
+    phoneErr.value = err?.message || '手机号验证失败，请稍后再试'
   }
   finally {
     phoneLoading.value = false
@@ -278,10 +322,27 @@ async function save() {
       :title="phone ? '更换手机号' : '绑定手机号'"
       desc="请填写常用号码，客服联系不上会影响救援派单。"
       confirm-text="保存"
+      :show-confirm="demoLogin"
       :confirm-loading="phoneLoading"
       @confirm="bindPhone"
     >
-      <view class="t-field" style="border-bottom: none; padding-top: 0">
+      <!-- #ifdef MP-WEIXIN -->
+      <view v-if="!demoLogin" class="t-field" style="border-bottom: none; padding-top: 0">
+        <button
+          class="t-btn t-btn--primary t-btn--lg t-btn--block"
+          style="border: none"
+          open-type="getPhoneNumber"
+          @getphonenumber="onWxPhone"
+        >
+          {{ phone ? '微信手机号快捷更换' : '微信手机号快捷绑定' }}
+        </button>
+        <view class="t-hint mt-2">
+          微信授权后自动绑定，无需手动输入
+        </view>
+      </view>
+      <!-- #endif -->
+
+      <view v-if="demoLogin" class="t-field" style="border-bottom: none; padding-top: 0">
         <view class="t-field__hd">
           <text class="t-label t-label--req">手机号</text>
         </view>
@@ -291,6 +352,11 @@ async function save() {
           <text>{{ phoneErr }}</text>
         </view>
       </view>
+      <!-- #ifndef MP-WEIXIN -->
+      <view v-if="!demoLogin" class="t-hint">
+        当前环境不支持微信手机号授权，请在小程序内完成绑定
+      </view>
+      <!-- #endif -->
     </TSheet>
   </view>
 </template>

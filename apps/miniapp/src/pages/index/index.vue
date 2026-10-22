@@ -6,7 +6,7 @@
  * 所有列表状态都有落点：骨架屏（首屏）/ 顶栏进度条（切分类）/ 空态 / 错误重试。
  */
 import { computed, ref } from 'vue'
-import { onLoad, onPullDownRefresh, onShow } from '@dcloudio/uni-app'
+import { onLoad, onPullDownRefresh, onShow, onUnload } from '@dcloudio/uni-app'
 import StoreCard from './components/StoreCard.vue'
 import TBrand from '@/components/tire/TBrand.vue'
 import TSheet from '@/components/tire/TSheet.vue'
@@ -15,7 +15,7 @@ import TState from '@/components/tire/TState.vue'
 import { http } from '@/tire/request'
 import { useShare } from '@/tire/share'
 import { useTire } from '@/tire/store'
-import { call, toast } from '@/tire/utils'
+import { call, go, toast } from '@/tire/utils'
 
 interface StoreItem {
   id: number
@@ -37,8 +37,10 @@ useShare()
 /** 默认坐标：定位被拒时用它展示「默认城市」门店，避免整页空白 */
 const DEFAULT_POS = { lat: 34.75, lng: 113.76 }
 
-const settings = ref<Record<string, string>>({})
+const settings = ref<Record<string, any>>({})
 const servicePhone = computed(() => settings.value.servicePhone || '')
+/** 演示登录环境允许手动输入手机号；真实微信环境用 getPhoneNumber 授权 */
+const demoLogin = computed(() => settings.value.demoLogin !== false)
 
 /** 分类：全部 + 后端 6 个分类，key 与 /app/stores 的 category 参数一致 */
 const CATEGORIES = [
@@ -70,6 +72,13 @@ const rescueSheet = ref(false)
 const rescueDesc = ref('')
 const rescueLoading = ref(false)
 const rescueErr = ref('')
+const rescueVehicleType = ref('')
+const rescuePlate = ref('')
+const VEHICLE_TYPES = [
+  { key: 'big_truck', name: '大车' },
+  { key: 'small_car', name: '小车' },
+  { key: 'other', name: '其他' },
+]
 const RESCUE_TIPS = ['高速应急车道', '桥上 / 桥下', '服务区', '小区地库', '国道 / 省道边']
 
 const phoneSheet = ref(false)
@@ -80,15 +89,24 @@ const phoneLoading = ref(false)
 const pendingRescue = ref(false)
 
 let loadedOnce = false
+let locTimer: ReturnType<typeof setTimeout> | null = null
+/** 同一批门店只上报一次曝光，避免 onShow/下拉刷新重复刷痕迹 */
+let lastViewKey = ''
 
 onLoad(() => {
   loadSettings()
+  // 先拉门店，再异步定位：定位回调慢或超时也不会让首页一直空着
+  loadStores({ silent: true })
   locate()
 })
 onShow(() => {
   // 从登录页返回时登录态可能变化：静默刷新一次列表（不闪骨架屏）
   if (loadedOnce)
     loadStores({ silent: true })
+})
+onUnload(() => {
+  if (locTimer)
+    clearTimeout(locTimer)
 })
 
 onPullDownRefresh(async () => {
@@ -105,19 +123,38 @@ async function loadSettings() {
   }
 }
 
-/** 定位：失败不阻塞首页，降级为默认城市并给出「手动填写」入口 */
+/** 定位：先展示全部门店；5 秒无回调按默认城市降级，避免首页永久停在「定位中」 */
 function locate() {
+  if (locTimer)
+    clearTimeout(locTimer)
   locState.value = 'locating'
   locLabel.value = '正在获取当前位置'
+  locTimer = setTimeout(() => {
+    if (locState.value !== 'locating')
+      return
+    coords.value = { ...DEFAULT_POS }
+    locState.value = 'denied'
+    locLabel.value = '定位超时，展示默认城市门店'
+    toast('定位超时，展示默认城市门店')
+    loadStores({ silent: true })
+  }, 5000)
   uni.getLocation({
     type: 'gcj02',
     success: (res) => {
+      if (locTimer) {
+        clearTimeout(locTimer)
+        locTimer = null
+      }
       coords.value = { lat: res.latitude, lng: res.longitude }
       locState.value = 'ok'
       locLabel.value = '已定位当前位置'
       loadStores({ silent: true })
     },
     fail: () => {
+      if (locTimer) {
+        clearTimeout(locTimer)
+        locTimer = null
+      }
       coords.value = { ...DEFAULT_POS }
       locState.value = 'denied'
       locLabel.value = '未授权定位，展示默认城市门店'
@@ -141,6 +178,7 @@ async function loadStores(opts: { silent?: boolean } = {}) {
     stores.value = Array.isArray(list) ? list : []
     errorMsg.value = ''
     loadedOnce = true
+    reportViews()
   }
   catch (e: any) {
     if (!opts.silent)
@@ -151,10 +189,23 @@ async function loadStores(opts: { silent?: boolean } = {}) {
   }
 }
 
+/** 列表曝光：登录用户按当前分类批量上报，后台「浏览痕迹」才能看到真实浏览 */
+function reportViews() {
+  if (!tire.loggedIn || !stores.value.length)
+    return
+  const ids = stores.value.slice(0, 20).map(s => s.id)
+  const key = `${activeCat.value}:${ids.join(',')}`
+  if (key === lastViewKey)
+    return
+  lastViewKey = key
+  http.post('/app/view-log', { storeIds: ids, action: 'view' }, { silent: true }).catch(() => {})
+}
+
 function pickCat(key: string) {
   if (activeCat.value === key)
     return
   activeCat.value = key
+  lastViewKey = ''
   loadStores()
 }
 
@@ -193,6 +244,9 @@ function applyLoc() {
 function openRescue() {
   rescueDesc.value = locState.value === 'ok' || locState.value === 'manual' ? locLabel.value : ''
   rescueErr.value = ''
+  // 车主的默认车型：车队更可能是大车，其余默认小车，仍可在弹层里改
+  if (!rescueVehicleType.value)
+    rescueVehicleType.value = tire.me?.role === 'fleet' ? 'big_truck' : 'small_car'
   rescueSheet.value = true
 }
 
@@ -203,10 +257,16 @@ function pickTip(t: string) {
 async function submitRescue() {
   if (rescueLoading.value)
     return
+  if (!rescueVehicleType.value) {
+    rescueErr.value = '请选择车型（大车 / 小车 / 其他）'
+    return
+  }
   rescueLoading.value = true
   rescueErr.value = ''
   try {
     await http.post('/app/rescue-alert', {
+      vehicleType: rescueVehicleType.value,
+      plateNo: rescuePlate.value.trim(),
       lat: coords.value?.lat ?? null,
       lng: coords.value?.lng ?? null,
       locationDesc: rescueDesc.value.trim(),
@@ -214,9 +274,14 @@ async function submitRescue() {
     rescueSheet.value = false
     uni.showModal({
       title: '求助已发出',
-      content: '平台已收到您的求助，客服将尽快与您电话联系。请尽量停在安全位置并打开双闪。',
-      showCancel: false,
-      confirmText: '知道了',
+      content: '平台已收到您的求助，客服将尽快与您电话联系。可在「我的 - 我的记录」查看进度或取消。请尽量停在安全位置并打开双闪。',
+      showCancel: true,
+      confirmText: '查看记录',
+      cancelText: '知道了',
+      success: (r) => {
+        if (r.confirm)
+          go('/pkg-me/records')
+      },
     })
   }
   catch (e: any) {
@@ -228,7 +293,22 @@ async function submitRescue() {
       phoneErr.value = ''
       phoneSheet.value = true
     }
-    else if (e?.code === 40001) {
+    else if (e?.code === 40900) {
+      // 2 分钟内重复提交：后端返回已有工单，直接引导查看
+      rescueSheet.value = false
+      uni.showModal({
+        title: '已收到你的求助',
+        content: '刚刚已提交过一条求助，客服正在处理。可在「我的 - 我的记录」查看进度或取消。',
+        showCancel: true,
+        confirmText: '查看记录',
+        cancelText: '知道了',
+        success: (r) => {
+          if (r.confirm)
+            go('/pkg-me/records')
+        },
+      })
+    }
+    else if (e?.code === 40001 || e?.code === 40003) {
       rescueSheet.value = false
     }
     else {
@@ -240,7 +320,22 @@ async function submitRescue() {
   }
 }
 
+async function finishBind() {
+  await tire.loadMe()
+  phoneSheet.value = false
+  toast('手机号已绑定')
+  if (pendingRescue.value) {
+    pendingRescue.value = false
+    rescueSheet.value = true
+    await submitRescue()
+  }
+}
+
 async function bindPhone() {
+  if (!demoLogin.value) {
+    phoneErr.value = '请使用微信手机号快捷绑定'
+    return
+  }
   const phone = phoneVal.value.trim()
   if (!/^1\d{10}$/.test(phone)) {
     phoneErr.value = '请输入 11 位手机号'
@@ -252,17 +347,33 @@ async function bindPhone() {
   phoneErr.value = ''
   try {
     await http.post('/app/auth/phone', { phone }, { silent: true })
-    await tire.loadMe()
-    phoneSheet.value = false
-    toast('手机号已绑定')
-    if (pendingRescue.value) {
-      pendingRescue.value = false
-      rescueSheet.value = true
-      await submitRescue()
-    }
+    await finishBind()
   }
   catch (e: any) {
     phoneErr.value = e?.message || '绑定失败，请稍后重试'
+  }
+  finally {
+    phoneLoading.value = false
+  }
+}
+
+/** 微信手机号快速验证（仅真实微信环境，演示模式不显示该入口） */
+async function onWxPhone(e: any) {
+  const code = e?.detail?.code
+  if (!code) {
+    phoneErr.value = '未授权手机号，请重试或手动输入'
+    return
+  }
+  if (phoneLoading.value)
+    return
+  phoneLoading.value = true
+  phoneErr.value = ''
+  try {
+    await http.post('/app/auth/phone', { wxPhoneCode: code }, { silent: true })
+    await finishBind()
+  }
+  catch (err: any) {
+    phoneErr.value = err?.message || '手机号验证失败，请稍后重试'
   }
   finally {
     phoneLoading.value = false
@@ -355,7 +466,8 @@ function ensureLogin() {
         附近{{ activeCatName === '全部' ? '门店' : activeCatName }}
       </view>
       <view class="text-[11px] text-[#8F8981]">
-        <text v-if="stores.length">{{ stores.length }} 家 · 已按距离由近到远排序</text>
+        <text v-if="locState === 'locating' && stores.length">定位中，先展示全部门店</text>
+        <text v-else-if="stores.length">{{ stores.length }} 家 · 已按距离由近到远排序</text>
         <text v-else>按距离由近到远排序</text>
       </view>
     </view>
@@ -445,6 +557,31 @@ function ensureLogin() {
         </view>
       </view>
 
+      <view class="t-field">
+        <view class="t-field__hd">
+          <text class="t-label t-label--req">车型</text>
+          <text class="t-field__aside">便于安排对应门店</text>
+        </view>
+        <view class="flex gap-2">
+          <text
+            v-for="v in VEHICLE_TYPES"
+            :key="v.key"
+            class="t-tag"
+            :class="{ 'is-active': rescueVehicleType === v.key }"
+            @click="rescueVehicleType = v.key"
+          >
+            {{ v.name }}
+          </text>
+        </view>
+      </view>
+
+      <view class="t-field">
+        <view class="t-field__hd">
+          <text class="t-label">车牌号（选填）</text>
+        </view>
+        <input v-model="rescuePlate" class="t-input" placeholder="如 豫A8K2F6" :maxlength="12">
+      </view>
+
       <view class="t-field" style="border-bottom: none; padding-top: 0">
         <view class="t-field__hd">
           <text class="t-label">补充现场情况</text>
@@ -473,11 +610,28 @@ function ensureLogin() {
       title="绑定手机号"
       desc="救援需要电话联系你确认位置，绑定后立即发出这次求助。"
       confirm-text="绑定并呼救"
+      :show-confirm="demoLogin"
       :confirm-loading="phoneLoading"
       @confirm="bindPhone"
       @cancel="closePhoneSheet"
     >
-      <view class="t-field" style="border-bottom: none; padding-top: 0">
+      <!-- #ifdef MP-WEIXIN -->
+      <view v-if="!demoLogin" class="t-field" style="border-bottom: none; padding-top: 0">
+        <button
+          class="t-btn t-btn--primary t-btn--lg t-btn--block"
+          style="border: none"
+          open-type="getPhoneNumber"
+          @getphonenumber="onWxPhone"
+        >
+          微信手机号快捷绑定
+        </button>
+        <view class="t-hint mt-2">
+          微信授权后自动绑定，无需手动输入
+        </view>
+      </view>
+      <!-- #endif -->
+
+      <view v-if="demoLogin" class="t-field" style="border-bottom: none; padding-top: 0">
         <view class="t-field__hd">
           <text class="t-label t-label--req">手机号</text>
         </view>
@@ -490,6 +644,11 @@ function ensureLogin() {
           仅用于本次救援联系，不会对外展示
         </view>
       </view>
+      <!-- #ifndef MP-WEIXIN -->
+      <view v-if="!demoLogin" class="t-hint">
+        当前环境不支持微信手机号授权，请在小程序内完成绑定
+      </view>
+      <!-- #endif -->
     </TSheet>
   </view>
 </template>
@@ -619,6 +778,13 @@ function ensureLogin() {
 
 .home-cat:active .home-cat__ico {
   transform: scale(0.94);
+}
+
+/* 车型选择：选中态用品牌橙，和分类金刚区保持一致 */
+.t-tag.is-active {
+  color: #fff;
+  background: var(--brand);
+  border-color: var(--brand);
 }
 
 /* 底部给悬浮按钮留出视觉空间 */

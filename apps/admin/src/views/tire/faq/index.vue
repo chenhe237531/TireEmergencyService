@@ -1,11 +1,12 @@
 <script setup lang="ts">
-import { onActivated, onMounted, reactive, ref } from "vue";
+import { computed, onActivated, onMounted, reactive, ref } from "vue";
 import dayjs from "dayjs";
 import { ElMessageBox } from "element-plus";
 import IconPlus from "~icons/tabler/plus";
 import IconSearch from "~icons/tabler/search";
 import { message } from "@/utils/message";
 import { faqDelete, faqList, faqUpdate } from "@/api/tire";
+import { useUserStoreHook } from "@/store/modules/user";
 import type { FaqItem } from "@/api/tire";
 import FaqFormDialog from "./FaqFormDialog.vue";
 
@@ -19,6 +20,10 @@ const list = ref<FaqItem[]>([]);
 /** 正在切换显隐的问题 id，用于行内 switch loading */
 const statusLoadingId = ref<number | null>(null);
 const deletingId = ref<number | null>(null);
+/** 删除属于高风险操作，仅超级管理员显示入口；运营仍可新增/编辑/隐藏 */
+const canDelete = computed(() =>
+  useUserStoreHook().roles.includes("super_admin")
+);
 
 const query = reactive({ keyword: "" });
 
@@ -216,7 +221,7 @@ onActivated(() => {
         <el-table-column label="更新时间" width="165">
           <template #default="{ row }">
             <span class="text-text_color_regular">
-              {{ formatTime(row.createdAt) }}
+              {{ formatTime(row.updatedAt || row.createdAt) }}
             </span>
           </template>
         </el-table-column>
@@ -227,6 +232,7 @@ onActivated(() => {
               编辑
             </el-button>
             <el-button
+              v-if="canDelete"
               link
               type="danger"
               :loading="deletingId === row.id"

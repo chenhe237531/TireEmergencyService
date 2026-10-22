@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onActivated, onMounted, reactive, ref } from "vue";
+import { computed, nextTick, onActivated, onBeforeUnmount, onMounted, reactive, ref } from "vue";
 import dayjs from "dayjs";
 import { onBeforeRouteLeave } from "vue-router";
 import { ElMessageBox } from "element-plus";
@@ -14,8 +14,14 @@ import IconQrcode from "~icons/tabler/qrcode";
 import { message } from "@/utils/message";
 import { fileUrl, getSettings, saveSettings, uploadImage } from "@/api/tire";
 import type { PlatformSettings } from "@/api/tire";
+import { useUserStoreHook } from "@/store/modules/user";
 
 defineOptions({ name: "TireSetting" });
+
+/** 平台设置属于全局配置，仅超级管理员可改；运营进入为只读 */
+const canEdit = computed(() =>
+  useUserStoreHook().roles.includes("super_admin")
+);
 
 /** 客服二维码体积上限，与后端上传接口保持一致 */
 const MAX_QR_SIZE = 2 * 1024 * 1024;
@@ -183,9 +189,22 @@ onBeforeRouteLeave(async () => {
   }
 });
 
+/** 直接刷新/关闭标签页时也提示未保存，避免只在路由切换时拦截 */
+function onBeforeUnload(event: BeforeUnloadEvent) {
+  if (!isDirty.value) return;
+  event.preventDefault();
+  event.returnValue = "";
+}
+
 // keepAlive 页面：首次由 onMounted 加载，之后切回时再拉一次最新配置
 let skipFirstActivated = true;
-onMounted(() => loadSettings());
+onMounted(() => {
+  loadSettings();
+  window.addEventListener("beforeunload", onBeforeUnload);
+});
+onBeforeUnmount(() => {
+  window.removeEventListener("beforeunload", onBeforeUnload);
+});
 onActivated(() => {
   if (skipFirstActivated) {
     skipFirstActivated = false;
@@ -205,6 +224,14 @@ onActivated(() => {
       :closable="false"
       title="这里维护的是小程序端「我的 - 联系客服 / 关于我们 / 用户协议 / 隐私政策 / 常见问题」展示的内容，修改后需保存才会生效。"
     />
+    <el-alert
+      v-if="!canEdit"
+      class="mb-3"
+      type="warning"
+      show-icon
+      :closable="false"
+      title="平台设置仅超级管理员可修改，当前为只读模式。"
+    />
 
     <el-card v-if="loadError" shadow="never">
       <el-empty :description="loadError">
@@ -221,6 +248,7 @@ onActivated(() => {
         :model="form"
         :rules="rules"
         label-width="110px"
+        :disabled="!canEdit"
         @submit.prevent
       >
         <el-card shadow="never" class="mb-3">
@@ -259,6 +287,7 @@ onActivated(() => {
               <div class="flex flex-col items-start gap-2">
                 <div class="flex items-center gap-2">
                   <el-upload
+                    v-if="canEdit"
                     :show-file-list="false"
                     :http-request="handleUpload"
                     :disabled="uploading"
@@ -269,7 +298,7 @@ onActivated(() => {
                     </el-button>
                   </el-upload>
                   <el-button
-                    v-if="form.wechatQr"
+                    v-if="form.wechatQr && canEdit"
                     type="danger"
                     link
                     @click="handleRemoveQr"
@@ -375,7 +404,7 @@ onActivated(() => {
             </template>
           </div>
           <!-- 右侧留白避开布局右下角的「回到顶部」悬浮按钮，防止遮挡保存按钮 -->
-          <div class="flex gap-2 pr-9">
+          <div v-if="canEdit" class="flex gap-2 pr-9">
             <el-button
               :icon="IconRefresh"
               :loading="loading"
@@ -393,6 +422,9 @@ onActivated(() => {
               保存设置
             </el-button>
           </div>
+          <span v-else class="pr-9 text-xs text-[var(--el-text-color-secondary)]">
+            只读模式
+          </span>
         </div>
       </el-card>
     </template>

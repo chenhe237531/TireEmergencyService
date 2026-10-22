@@ -1,10 +1,16 @@
 <script setup lang="ts">
-import * as echarts from "echarts";
+import * as echarts from "echarts/core";
+import { LineChart } from "echarts/charts";
+import { GridComponent, LegendComponent, TooltipComponent } from "echarts/components";
+import { CanvasRenderer } from "echarts/renderers";
 import { onBeforeUnmount, onMounted, ref, watch } from "vue";
+
+// 按需注册，避免把整包 ECharts 打进后台首屏
+echarts.use([LineChart, GridComponent, TooltipComponent, LegendComponent, CanvasRenderer]);
 
 const props = defineProps<{ option: any; height?: string }>();
 const el = ref<HTMLDivElement>();
-let chart: echarts.ECharts | null = null;
+let chart: ReturnType<typeof echarts.init> | null = null;
 const resize = () => chart?.resize();
 
 onMounted(() => {

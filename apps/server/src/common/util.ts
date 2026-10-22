@@ -1,4 +1,4 @@
-import { createHash, randomBytes } from 'node:crypto'
+import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto'
 import dayjs from 'dayjs'
 
 export const now = () => new Date()
@@ -6,9 +6,24 @@ export const addDays = (d: number, from = new Date()) => new Date(from.getTime()
 export const fmt = (d?: Date | string | null, f = 'YYYY-MM-DD HH:mm') => (d ? dayjs(d).format(f) : '')
 export const today = () => dayjs().format('YYYY-MM-DD')
 
-/** 密码哈希（sha256）：不存明文 */
+/** 密码哈希：scrypt + 随机盐，格式 scrypt$salt$hash；旧版 sha256 仍可校验并在登录时自动升级 */
 export function hashPwd(pwd: string) {
-  return createHash('sha256').update(`tire:${pwd}`).digest('hex')
+  const salt = randomBytes(16).toString('hex')
+  const hash = scryptSync(`tire:${pwd}`, salt, 64).toString('hex')
+  return `scrypt$${salt}$${hash}`
+}
+
+export function verifyPwd(pwd: string, stored: string) {
+  if (!stored) return false
+  if (stored.startsWith('scrypt$')) {
+    const [, salt, hash] = stored.split('$')
+    if (!salt || !hash) return false
+    const next = scryptSync(`tire:${pwd}`, salt, 64)
+    const prev = Buffer.from(hash, 'hex')
+    return prev.length === next.length && timingSafeEqual(prev, next)
+  }
+  // 兼容旧库：sha256 哈希
+  return createHash('sha256').update(`tire:${pwd}`).digest('hex') === stored
 }
 
 export function maskPhone(p?: string | null) {

@@ -28,6 +28,7 @@ apps/miniapp/project.private.config.json
 # IDE / agent 工作区
 .trae/
 .workbuddy/
+.worktrees/
 # 路演材料(大体积截图与 HTML,不入库)
 pitch/
 # 云托管部署包(构建产物)

@@ -6,10 +6,13 @@
 # ───────────── 构建 ─────────────
 FROM node:22-bookworm-slim AS build
 ARG NPM_REGISTRY=https://registry.npmmirror.com/
+# 构建环境访问不了 deb.debian.org 时可传 --build-arg APT_MIRROR=http://mirrors.aliyun.com
+ARG APT_MIRROR=http://deb.debian.org
 ENV CI=true \
     COREPACK_NPM_REGISTRY=${NPM_REGISTRY} \
     PRISMA_ENGINES_MIRROR=https://registry.npmmirror.com/-/binary/prisma
-RUN apt-get update \
+RUN sed -i "s|http://deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+ && apt-get update \
  && apt-get install -y --no-install-recommends openssl ca-certificates \
  && rm -rf /var/lib/apt/lists/* \
  && corepack enable
@@ -33,13 +36,15 @@ RUN pnpm --filter tire-server deploy --legacy /out/server \
 
 # ───────────── 运行 ─────────────
 FROM node:22-bookworm-slim
+ARG APT_MIRROR=http://deb.debian.org
 ENV TZ=Asia/Shanghai \
     NODE_ENV=production \
     WEB_ROOT=/app \
     PORT=80 \
     DB_PROVIDER=mysql \
     HOME=/tmp
-RUN apt-get update \
+RUN sed -i "s|http://deb.debian.org|${APT_MIRROR}|g" /etc/apt/sources.list.d/debian.sources \
+ && apt-get update \
  && apt-get install -y --no-install-recommends openssl ca-certificates tzdata \
  && rm -rf /var/lib/apt/lists/*
 
@@ -52,6 +57,6 @@ COPY --from=build /src/apps/miniapp/dist/build/h5 /app/miniapp/dist/build/h5
 # 云托管默认容器端口 80（服务设置里的「端口」要与 PORT 一致）
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
-  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||80)+'/api/v1/faqs').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+  CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||80)+'/api/v1/app/faqs').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 # 启动：同步表结构（多实例时加锁串行）→ 空库写入演示数据 → 启动 API
 CMD ["sh", "-c", "node prisma/db.js init && exec node dist/main.js"]

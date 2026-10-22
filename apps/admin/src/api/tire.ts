@@ -94,6 +94,9 @@ export interface RescueItem {
   id: number;
   driverId?: number | null;
   driver?: { id: number; nickname: string; phone: string; role: string } | null;
+  vehicleType: string;
+  vehicleTypeName: string;
+  plateNo: string;
   lat?: number | null;
   lng?: number | null;
   locationDesc: string;
@@ -102,9 +105,42 @@ export interface RescueItem {
   note: string;
   handledBy: string;
   handledAt?: string | null;
+  assignedStoreId?: number | null;
+  assignedStore?: { id: number; name: string; category: string; areaLabel: string; phone: string } | null;
+  assignedAt?: string | null;
+  overdue?: boolean;
   createdAt: string;
   driverPhone: string;
   driverRoleName: string;
+}
+
+export interface TicketLogItem {
+  id: number;
+  ticketType: string;
+  ticketId: number;
+  fromStatus: string;
+  toStatus: string;
+  note: string;
+  operatorId?: number | null;
+  operatorName: string;
+  createdAt: string;
+}
+
+export interface RescueDetail extends RescueItem {
+  logs: TicketLogItem[];
+}
+
+export interface NearbyStoreItem {
+  id: number;
+  name: string;
+  category: string;
+  categoryName: string;
+  areaLabel: string;
+  address: string;
+  phone: string;
+  contactName: string;
+  distanceKm: number;
+  distanceLabel: string;
 }
 
 export interface ConsultItem {
@@ -125,6 +161,8 @@ export interface ConsultItem {
   handledBy: string;
   handledAt?: string | null;
   createdAt: string;
+  overdue?: boolean;
+  logs?: TicketLogItem[];
   driver?: { id: number; nickname: string; phone: string; role: string } | null;
 }
 
@@ -137,6 +175,7 @@ export interface DriverItem {
   roleName: string;
   roleEmpty: boolean;
   status: string;
+  statusName: string;
   lastLoginAt?: string | null;
   createdAt: string;
 }
@@ -158,6 +197,7 @@ export interface FaqItem {
   sort: number;
   status: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 export interface DashboardStats {
@@ -176,6 +216,13 @@ export interface Paged<T> {
   page: number;
   pageSize: number;
 }
+
+// ─── 账号安全 ───
+
+export const changePassword = (data: {
+  oldPassword: string;
+  newPassword: string;
+}) => request<{ ok: boolean }>("post", "/api/v1/admin/auth/password", data);
 
 // ─── 工作台 ───
 
@@ -205,10 +252,13 @@ export const storeDelete = (id: number) =>
 // ─── 救援通知 ───
 
 export const rescueUnreadCount = () =>
-  request<{ rescue: number; consult: number; total: number }>(
-    "get",
-    "/api/v1/admin/rescue-alerts/unread-count"
-  );
+  request<{
+    rescue: number;
+    consult: number;
+    overdueRescue: number;
+    overdueConsult: number;
+    total: number;
+  }>("get", "/api/v1/admin/rescue-alerts/unread-count");
 
 export const rescueList = (params?: {
   status?: string;
@@ -222,9 +272,22 @@ export const rescueList = (params?: {
     `/api/v1/admin/rescue-alerts${toQuery(params)}`
   );
 
+export const rescueDetail = (id: number) =>
+  request<RescueDetail>("get", `/api/v1/admin/rescue-alerts/${id}`);
+
+export const rescueNearbyStores = (id: number) =>
+  request<NearbyStoreItem[]>(
+    "get",
+    `/api/v1/admin/rescue-alerts/${id}/nearby-stores`
+  );
+
 export const rescueHandle = (
   id: number,
-  data: { status?: string; note?: string }
+  data: {
+    status?: string;
+    note?: string;
+    assignedStoreId?: number | null;
+  }
 ) => request<RescueItem>("patch", `/api/v1/admin/rescue-alerts/${id}`, data);
 
 // ─── 咨询工单 ───
@@ -259,6 +322,13 @@ export const driverList = (params?: {
   pageSize?: number;
 }) =>
   request<Paged<DriverItem>>("get", `/api/v1/admin/drivers${toQuery(params)}`);
+
+export const driverUpdateStatus = (id: number, status: "active" | "blocked") =>
+  request<{ id: number; status: string; statusName: string }>(
+    "patch",
+    `/api/v1/admin/drivers/${id}`,
+    { status }
+  );
 
 export const viewLogList = (params?: {
   driverId?: number;

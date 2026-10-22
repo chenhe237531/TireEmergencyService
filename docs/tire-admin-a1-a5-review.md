@@ -118,3 +118,17 @@
 
 18. **`.worktrees/` 忽略规则**
     目前写在 `.git/info/exclude`（只对本机生效），团队协作应写入 `.gitignore`。
+
+## 五、2026-10-22 修复状态
+
+本轮已处理：
+
+- 生产 mock 注入导致白屏：`vitePluginFakeServer.enableProd` 改为 `false`，并补 `defineMock` 类型声明。
+- FAQ 补 `updatedAt`（含历史数据默认值），列表改展示真实更新时间。
+- 司机「未完善身份」改为服务端 `role=empty` 筛选，不再前端截断。
+- 后台权限落地：删除门店/FAQ、平台设置仅 `super_admin`；运营仍可处理工单、维护门店与 FAQ 内容。
+- 上传接口补 5MB multer 限制；后台设置直接刷新/关闭页面时补 `beforeunload` 提醒。
+- ECharts 改为按需注册，趋势图分块从约 1.13 MB 降到约 517 KB。
+- `.worktrees/` 已写入 `.gitignore`。
+
+仍未处理（P2/P3）：列表筛选条件 URL 持久化、批量操作、统一空态/骨架、E2E 入库、上传文件清理策略。
