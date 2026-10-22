@@ -16,7 +16,7 @@ import { http } from '@/tire/request'
 import { canInitThirdPartySdk } from '@/tire/app/privacy'
 import { useShare } from '@/tire/share'
 import { useTire } from '@/tire/store'
-import { call, go, toast } from '@/tire/utils'
+import { call, clearSubmitRequestId, go, submitRequestId, toast } from '@/tire/utils'
 
 interface StoreItem {
   id: number
@@ -280,7 +280,10 @@ async function submitRescue() {
       lat: coords.value?.lat ?? null,
       lng: coords.value?.lng ?? null,
       locationDesc: rescueDesc.value.trim(),
+      // 弱网重试 / 杀进程后重试复用同一个键，服务端据此返回原工单
+      clientRequestId: submitRequestId('rescue'),
     })
+    clearSubmitRequestId('rescue')
     rescueSheet.value = false
     uni.showModal({
       title: '求助已发出',
