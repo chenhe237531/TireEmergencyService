@@ -6,7 +6,7 @@
  * 所有列表状态都有落点：骨架屏（首屏）/ 顶栏进度条（切分类）/ 空态 / 错误重试。
  */
 import { computed, ref, watch } from 'vue'
-import { onLoad, onPullDownRefresh, onShow, onUnload } from '@dcloudio/uni-app'
+import { onHide, onLoad, onPullDownRefresh, onShow, onUnload } from '@dcloudio/uni-app'
 import StoreCard from './components/StoreCard.vue'
 import TBrand from '@/components/tire/TBrand.vue'
 import TButton from '@/components/tire/TButton.vue'
@@ -15,6 +15,8 @@ import TSkeleton from '@/components/tire/TSkeleton.vue'
 import TState from '@/components/tire/TState.vue'
 import { http } from '@/tire/request'
 import { clearRescueDraft, loadRescueDraft, saveRescueDraft } from '@/tire/app/draft'
+import { ensureNotifyPermission } from '@/tire/app/notify'
+import { holdRecordsPolling } from '@/tire/app/recordsPoll'
 import { isNetworkError, retryWithBackoff } from '@/tire/app/retry'
 import { chooseLocationOnMap, getCurrentLocation, PRIVACY_REQUIRED } from '@/tire/app/location'
 import { canInitThirdPartySdk } from '@/tire/app/privacy'
@@ -118,6 +120,8 @@ let loadedOnce = false
 let locTimer: ReturnType<typeof setTimeout> | null = null
 /** 同一批门店只上报一次曝光，避免 onShow/下拉刷新重复刷痕迹 */
 let lastViewKey = ''
+/** 记录轮询持有句柄：页面可见期间轮询救援/咨询状态变化（issue #8） */
+let releaseRecordsPoll: (() => void) | null = null
 
 onLoad(() => {
   loadSettings()
@@ -129,10 +133,20 @@ onShow(() => {
   // 从登录页返回时登录态可能变化：静默刷新一次列表（不闪骨架屏）
   if (loadedOnce)
     loadStores({ silent: true })
+  // 进入首页立即拉取记录并开始 30 秒轮询；未登录内部静默跳过（App 端请求一次通知权限）
+  releaseRecordsPoll = holdRecordsPolling()
+  ensureNotifyPermission()
+})
+onHide(() => {
+  // 页面隐藏停止轮询；App 整体退后台时由 App.vue 接管（后台轮询驱动本地通知）
+  releaseRecordsPoll?.()
+  releaseRecordsPoll = null
 })
 onUnload(() => {
   if (locTimer)
     clearTimeout(locTimer)
+  releaseRecordsPoll?.()
+  releaseRecordsPoll = null
 })
 
 onPullDownRefresh(async () => {
@@ -574,7 +588,7 @@ function ensureLogin() {
 
         <view class="home-loc" @click="openLocSheet">
           <view class="min-w-0 flex flex-1 items-center gap-1.5">
-            <text class="i-tabler-map-pin home-loc__pin" />
+            <text class="home-loc__pin i-tabler-map-pin" />
             <text class="home-loc__txt" :class="{ 'home-loc__txt--warn': locState === 'denied' }">
               {{ locLabel }}
             </text>

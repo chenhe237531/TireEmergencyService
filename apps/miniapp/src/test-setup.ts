@@ -42,6 +42,12 @@ const uniMock = {
   getSystemInfo: vi.fn(),
   onNetworkStatusChange: vi.fn(),
   getNetworkType: vi.fn(),
+  // 全局事件总线（App.vue / 记录页轮询刷新链路使用）
+  $emit: vi.fn(),
+  $on: vi.fn(),
+  $off: vi.fn(),
+  previewImage: vi.fn(),
+  stopPullDownRefresh: vi.fn(),
 }
 
 Object.defineProperty(globalThis, 'uni', {
