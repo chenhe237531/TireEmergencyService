@@ -9,10 +9,12 @@ import { computed, ref } from 'vue'
 import { onLoad, onPullDownRefresh, onShow, onUnload } from '@dcloudio/uni-app'
 import StoreCard from './components/StoreCard.vue'
 import TBrand from '@/components/tire/TBrand.vue'
+import TButton from '@/components/tire/TButton.vue'
 import TSheet from '@/components/tire/TSheet.vue'
 import TSkeleton from '@/components/tire/TSkeleton.vue'
 import TState from '@/components/tire/TState.vue'
 import { http } from '@/tire/request'
+import { chooseLocationOnMap, getCurrentLocation, PRIVACY_REQUIRED } from '@/tire/app/location'
 import { canInitThirdPartySdk } from '@/tire/app/privacy'
 import { useShare } from '@/tire/share'
 import { useTire } from '@/tire/store'
@@ -35,9 +37,6 @@ const tire = useTire()
 /** 微信小程序：转发 / 朋友圈标题取后台「分享标题」 */
 useShare()
 
-/** 默认坐标：定位被拒时用它展示「默认城市」门店，避免整页空白 */
-const DEFAULT_POS = { lat: 34.75, lng: 113.76 }
-
 const settings = ref<Record<string, any>>({})
 const servicePhone = computed(() => settings.value.servicePhone || '')
 /** 演示登录环境允许手动输入手机号；真实微信环境用 getPhoneNumber 授权 */
@@ -59,15 +58,19 @@ const activeCatName = computed(() => CATEGORIES.find(c => c.key === activeCat.va
 const stores = ref<StoreItem[]>([])
 const loading = ref(true)
 const errorMsg = ref('')
-/** 定位状态：locating 定位中 / ok 已定位 / denied 未授权走默认坐标 / manual 手动填写 */
+/** 定位状态：locating 定位中 / ok 已定位 / denied 未授权或超时 / manual 手动填写 */
 const locState = ref<'locating' | 'ok' | 'denied' | 'manual'>('locating')
 const locLabel = ref('正在获取当前位置')
 const coords = ref<{ lat: number, lng: number } | null>(null)
+/** 没有可用坐标时不请求距离，也不展示距离与「按距离排序」 */
+const hasPosition = computed(() => coords.value != null)
 
 const locSheet = ref(false)
 const locDraft = ref('')
 const locLatDraft = ref('')
 const locLngDraft = ref('')
+/** 手填或地图选点得到的位置描述，再次打开位置弹层时回填，避免重复输入 */
+const lastLocDesc = ref('')
 
 const rescueSheet = ref(false)
 const rescueDesc = ref('')
@@ -124,54 +127,63 @@ async function loadSettings() {
   }
 }
 
-/** 定位：先展示全部门店；5 秒无回调按默认城市降级，避免首页永久停在「定位中」 */
+/** 定位：先展示全部门店；5 秒无回调按未授权处理，避免首页永久停在「定位中」 */
+let locateGen = 0
 function locate() {
   // #ifdef APP-PLUS
   // 未同意隐私政策前不初始化高德定位 / 地图 SDK
   if (!canInitThirdPartySdk()) {
-    coords.value = { ...DEFAULT_POS }
+    coords.value = null
     locState.value = 'denied'
-    locLabel.value = '同意隐私政策后可定位，展示默认城市门店'
+    locLabel.value = '同意隐私政策后可定位；也可手动填写位置'
     return
   }
   // #endif
-  if (locTimer)
+  if (locTimer) {
     clearTimeout(locTimer)
+    locTimer = null
+  }
+  // 代际计数：超时后迟到的成功/失败回调、或新一轮定位开始后，旧回调一律忽略
+  const gen = ++locateGen
   locState.value = 'locating'
   locLabel.value = '正在获取当前位置'
   locTimer = setTimeout(() => {
+    locTimer = null
     if (locState.value !== 'locating')
       return
-    coords.value = { ...DEFAULT_POS }
+    coords.value = null
     locState.value = 'denied'
-    locLabel.value = '定位超时，展示默认城市门店'
-    toast('定位超时，展示默认城市门店')
+    locLabel.value = '定位超时，可手动填写位置'
+    toast('定位超时，可手动填写位置')
     loadStores({ silent: true })
   }, 5000)
-  uni.getLocation({
-    type: 'gcj02',
-    success: (res) => {
+  getCurrentLocation()
+    .then((pos) => {
+      if (gen !== locateGen || locState.value !== 'locating')
+        return
       if (locTimer) {
         clearTimeout(locTimer)
         locTimer = null
       }
-      coords.value = { lat: res.latitude, lng: res.longitude }
+      coords.value = { lat: pos.lat, lng: pos.lng }
       locState.value = 'ok'
       locLabel.value = '已定位当前位置'
       loadStores({ silent: true })
-    },
-    fail: () => {
+    })
+    .catch(() => {
+      if (gen !== locateGen || locState.value !== 'locating')
+        return
       if (locTimer) {
         clearTimeout(locTimer)
         locTimer = null
       }
-      coords.value = { ...DEFAULT_POS }
+      // 拒绝定位时不使用默认坐标，避免展示不准确的距离
+      coords.value = null
       locState.value = 'denied'
-      locLabel.value = '未授权定位，展示默认城市门店'
-      toast('未授权定位，展示默认城市门店')
+      locLabel.value = '未授权定位，可手动填写位置'
+      toast('未授权定位，可手动填写位置')
       loadStores({ silent: true })
-    },
-  })
+    })
 }
 
 async function loadStores(opts: { silent?: boolean } = {}) {
@@ -229,7 +241,7 @@ function onStoreTap(s: StoreItem) {
 
 /** 手动填写位置：描述必填，经纬度可选 */
 function openLocSheet() {
-  locDraft.value = locState.value === 'manual' ? locLabel.value : ''
+  locDraft.value = lastLocDesc.value
   locLatDraft.value = coords.value ? String(coords.value.lat) : ''
   locLngDraft.value = coords.value ? String(coords.value.lng) : ''
   locSheet.value = true
@@ -243,16 +255,72 @@ function applyLoc() {
   }
   const lat = Number(locLatDraft.value)
   const lng = Number(locLngDraft.value)
-  const valid = locLatDraft.value && locLngDraft.value && !Number.isNaN(lat) && !Number.isNaN(lng)
-  coords.value = valid ? { lat, lng } : { ...DEFAULT_POS }
+  const latFilled = locLatDraft.value.trim() !== ''
+  const lngFilled = locLngDraft.value.trim() !== ''
+  const latValid = Number.isFinite(lat) && lat >= -90 && lat <= 90
+  const lngValid = Number.isFinite(lng) && lng >= -180 && lng <= 180
+  // 只填一边或越界都视为非法：错误的坐标会让后端距离计算与排序整体失真
+  if ((latFilled || lngFilled) && !(latFilled && lngFilled && latValid && lngValid)) {
+    toast('经纬度需成对填写，纬度 -90~90、经度 -180~180')
+    return
+  }
+  // 手填且没有经纬度时不编造坐标，列表按平台默认排序、不展示距离
+  coords.value = latFilled && lngFilled ? { lat, lng } : null
+  lastLocDesc.value = desc
   locState.value = 'manual'
   locLabel.value = desc
   locSheet.value = false
   loadStores()
 }
 
+/** uni 接口失败回调可能是 Error，也可能是 { errMsg }，统一取出文案 */
+function errorText(e: unknown): string {
+  if (e instanceof Error)
+    return e.message
+  if (typeof e === 'object' && e !== null && 'errMsg' in e)
+    return String((e as { errMsg?: unknown }).errMsg || '')
+  return ''
+}
+
+/** 地图选点：仅在 App 端可用，未同意隐私政策前不初始化地图 SDK */
+async function pickLocationOnMap() {
+  // #ifdef APP-PLUS
+  if (!canInitThirdPartySdk()) {
+    toast('请先同意隐私政策后再使用地图选点')
+    return
+  }
+  try {
+    const picked = await chooseLocationOnMap(coords.value)
+    coords.value = { lat: picked.lat, lng: picked.lng }
+    locState.value = 'ok'
+    locLabel.value = picked.desc || '已选择地图位置'
+    lastLocDesc.value = picked.desc || ''
+    locSheet.value = false
+    loadStores()
+  }
+  catch (e) {
+    const msg = errorText(e)
+    // 用户主动取消选点不提示；隐私闸门或权限问题给出下一步
+    if (msg === PRIVACY_REQUIRED)
+      toast('请先同意隐私政策后再使用地图选点')
+    else if (!/cancel/i.test(msg))
+      toast('地图选点未完成，可手动填写位置')
+  }
+  // #endif
+}
+
+/** 拒绝定位权限后引导到系统设置（仅 App 端） */
+function openSystemSettings() {
+  // #ifdef APP-PLUS
+  uni.openAppAuthorizeSetting({
+    fail: () => toast('请到系统设置中开启定位权限'),
+  })
+  // #endif
+}
+
 function openRescue() {
-  rescueDesc.value = locState.value === 'ok' || locState.value === 'manual' ? locLabel.value : ''
+  // 只回填真实的位置描述（手填 / 选点），自动定位只有状态文案，不拿来当救援位置
+  rescueDesc.value = lastLocDesc.value
   rescueErr.value = ''
   // 车主的默认车型：车队更可能是大车，其余默认小车，仍可在弹层里改
   if (!rescueVehicleType.value)
@@ -448,7 +516,7 @@ function ensureLogin() {
           </view>
           <view class="home-loc__act">
             <text v-if="locState === 'locating'" class="t-inline-loading__dot home-loc__spin" />
-            <text class="home-loc__act-txt">{{ locState === 'locating' ? '定位中' : '修改' }}</text>
+            <text class="home-loc__act-txt">{{ locState === 'locating' ? '定位中' : locState === 'denied' ? '手动填写' : '修改' }}</text>
             <text class="i-tabler-chevron-right text-[13px]" />
           </view>
         </view>
@@ -480,8 +548,8 @@ function ensureLogin() {
       </view>
       <view class="text-[11px] text-[#8F8981]">
         <text v-if="locState === 'locating' && stores.length">定位中，先展示全部门店</text>
-        <text v-else-if="stores.length">{{ stores.length }} 家 · 已按距离由近到远排序</text>
-        <text v-else>按距离由近到远排序</text>
+        <text v-else-if="stores.length">{{ hasPosition ? `${stores.length} 家 · 已按距离由近到远排序` : `${stores.length} 家门店` }}</text>
+        <text v-else>{{ hasPosition ? '按距离由近到远排序' : '按平台推荐排序' }}</text>
       </view>
     </view>
 
@@ -526,11 +594,23 @@ function ensureLogin() {
     <!-- 手动填写位置 -->
     <TSheet
       v-model:show="locSheet"
-      title="手动填写位置"
-      desc="定位不准或未授权时，写清你在哪，平台会按描述安排就近门店。"
+      title="选择位置"
+      desc="定位不准或未授权时，可地图选点，也可以直接写清你在哪。"
       confirm-text="使用这个位置"
       @confirm="applyLoc"
     >
+      <!-- #ifdef APP-PLUS -->
+      <view class="t-field" style="border-bottom: none; padding-top: 0">
+        <TButton type="soft" block icon="i-tabler-map-2" label="在地图上选点" @click="pickLocationOnMap" />
+        <view class="t-hint mt-2">
+          选点后自动回填名称与地址，坐标统一使用 GCJ-02
+        </view>
+        <view v-if="locState === 'denied'" class="t-hint mt-2" @click="openSystemSettings">
+          已拒绝定位？点此去系统设置开启
+        </view>
+      </view>
+      <!-- #endif -->
+
       <view class="t-field">
         <view class="t-field__hd">
           <text class="t-label t-label--req">位置描述</text>
@@ -546,7 +626,7 @@ function ensureLogin() {
           <input v-model="locLngDraft" class="t-input" type="digit" placeholder="经度 113.76">
         </view>
         <view class="t-hint mt-1">
-          不填则按默认城市（郑州）展示门店距离
+          不填则按平台推荐排序，不展示距离
         </view>
       </view>
     </TSheet>

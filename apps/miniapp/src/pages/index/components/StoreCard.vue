@@ -50,8 +50,9 @@ const services = computed(() => {
           <text class="truncate">{{ store.categoryName }}</text>
         </view>
       </view>
-      <view class="store__dist">
-        <text class="store__dist-num">{{ store.distanceLabel || '—' }}</text>
+      <!-- 未授权定位或未填坐标时后端不返回距离，这里也不展示 -->
+      <view v-if="store.distanceLabel" class="store__dist">
+        <text class="store__dist-num">{{ store.distanceLabel }}</text>
         <text class="store__dist-cap">距离</text>
       </view>
     </view>
