@@ -3,6 +3,7 @@
  * 我的记录（pkg-me）
  *
  * 司机查看自己提交的救援 / 咨询服务进度；待处理与跟进中的救援可主动取消。
+ * 咨询记录展示现场照片；文字先提交、照片未传成功的在这里标记「未上传」并可重试补传。
  * 门店只展示名称与模糊区域，不暴露电话和详细地址。
  */
 import { computed, ref } from 'vue'
@@ -10,8 +11,11 @@ import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
 import TButton from '@/components/tire/TButton.vue'
 import TState from '@/components/tire/TState.vue'
 import TSkeleton from '@/components/tire/TSkeleton.vue'
-import { http } from '@/tire/request'
-import { go, toast } from '@/tire/utils'
+import { http, uploadImage } from '@/tire/request'
+import { loadPendingPhotos, removePendingPhotos } from '@/tire/app/photoQueue'
+import type { PendingPhoto } from '@/tire/app/photoQueue'
+import { retryWithBackoff } from '@/tire/app/retry'
+import { absUrl, go, toast } from '@/tire/utils'
 
 interface RescueRecord {
   id: number
@@ -43,6 +47,11 @@ const loading = ref(true)
 const errMsg = ref('')
 const cancellingId = ref<number | null>(null)
 
+/** 各咨询记录的待补传照片（本地队列），展示「未上传」标记与重试入口 */
+const pendingByConsult = ref<Record<number, PendingPhoto[]>>({})
+/** 正在补传的咨询记录 id：按钮转圈 + 防连点 */
+const retryingConsultId = ref<number | null>(null)
+
 const activeList = computed(() => activeTab.value === 'rescue' ? rescues.value : consults.value)
 const isEmpty = computed(() => !loading.value && !errMsg.value && !activeList.value.length)
 
@@ -65,6 +74,19 @@ function fmtTime(value?: string) {
   return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+/** 从本地待上传队列按咨询记录分组（只统计已关联记录的条目） */
+function refreshPending() {
+  const map: Record<number, PendingPhoto[]> = {}
+  for (const p of loadPendingPhotos()) {
+    if (p.consultId == null)
+      continue
+    if (!map[p.consultId])
+      map[p.consultId] = []
+    map[p.consultId].push(p)
+  }
+  pendingByConsult.value = map
+}
+
 async function load(opts: { silent?: boolean } = {}) {
   if (!opts.silent)
     loading.value = true
@@ -76,6 +98,7 @@ async function load(opts: { silent?: boolean } = {}) {
     ])
     rescues.value = r?.list || []
     consults.value = c?.list || []
+    refreshPending()
   }
   catch (e: any) {
     if (!opts.silent)
@@ -96,6 +119,64 @@ function switchTab(tab: 'rescue' | 'consult') {
   activeTab.value = tab
 }
 
+/** 预览咨询现场图（大图走 absUrl 拼服务端地址） */
+function previewConsultImages(row: ConsultRecord, idx: number) {
+  const urls = (row.images || []).map(u => absUrl(u))
+  if (!urls.length)
+    return
+  uni.previewImage({ current: urls[idx], urls })
+}
+
+/**
+ * 补传未上传照片：逐张独立上传（各自退避重试，失败不阻塞其他照片），
+ * 上传成功的合并回咨询记录；仍失败的保留队列，下次进入页面或再点重试时继续。
+ */
+async function retryConsultPhotos(row: ConsultRecord) {
+  if (retryingConsultId.value)
+    return
+  const pending = pendingPhotosOf(row.id)
+  if (!pending.length)
+    return
+  retryingConsultId.value = row.id
+  try {
+    const uploaded: string[] = []
+    const okPaths: string[] = []
+    await Promise.all(pending.map(async (p) => {
+      try {
+        const r = await retryWithBackoff(() => uploadImage(p.path, { silent: true }))
+        uploaded.push(r.url)
+        okPaths.push(p.path)
+      }
+      catch {
+        // 仍失败：保留队列，等下次重试
+      }
+    }))
+    if (okPaths.length) {
+      const res = await retryWithBackoff(
+        () => http.post<{ images: string[] }>(`/app/consults/${row.id}/images`, { images: uploaded }, { silent: true }),
+      )
+      row.images = res.images
+      removePendingPhotos(okPaths)
+      refreshPending()
+    }
+    const remain = pendingPhotosOf(row.id).length
+    if (remain)
+      toast(`${remain} 张照片仍未上传成功，请检查网络后再试`)
+    else
+      toast('照片已全部补传')
+  }
+  catch (e: any) {
+    toast(e?.message || '补传失败，请稍后重试')
+  }
+  finally {
+    retryingConsultId.value = null
+  }
+}
+
+function pendingPhotosOf(consultId: number): PendingPhoto[] {
+  return pendingByConsult.value[consultId] || []
+}
+
 async function cancelRescue(row: RescueRecord) {
   const res = await new Promise<boolean>((resolve) => {
     uni.showModal({
@@ -103,7 +184,7 @@ async function cancelRescue(row: RescueRecord) {
       content: '确定取消这条求助吗？客服将不再为你派单。',
       confirmText: '取消求助',
       confirmColor: '#D93025',
-      cancelText: '再等等',
+      cancelText: '再想想',
       success: r => resolve(!!r.confirm),
       fail: () => resolve(false),
     })
@@ -244,11 +325,35 @@ async function cancelRescue(row: RescueRecord) {
                   {{ row.statusName }}
                 </text>
               </view>
+
+              <!-- 现场照片：已上传的可点查看，未上传的显示占位标记 -->
+              <view v-if="row.images?.length || pendingPhotosOf(row.id).length" class="rec-photos">
+                <view v-for="(img, i) in row.images" :key="img" class="rec-photo" @click="previewConsultImages(row, i)">
+                  <image class="rec-photo__img" :src="absUrl(img)" mode="aspectFill" />
+                </view>
+                <view v-for="p in pendingPhotosOf(row.id)" :key="p.id" class="rec-photo rec-photo--pending">
+                  <text class="i-tabler-cloud-off text-[16px]" />
+                </view>
+              </view>
+
               <view class="mt-2 flex items-center justify-between">
                 <text class="rec-time">{{ fmtTime(row.createdAt) }}</text>
-                <text class="rec-time">
-                  {{ row.images?.length ? `${row.images.length} 张现场图` : '无现场图' }}
-                </text>
+                <view class="flex items-center gap-2">
+                  <template v-if="pendingPhotosOf(row.id).length">
+                    <text class="rec-pending-tag">{{ pendingPhotosOf(row.id).length }} 张未上传</text>
+                    <TButton
+                      type="ghost"
+                      size="sm"
+                      :loading="retryingConsultId === row.id"
+                      @click="retryConsultPhotos(row)"
+                    >
+                      重试上传
+                    </TButton>
+                  </template>
+                  <text v-else class="rec-time">
+                    {{ row.images?.length ? `${row.images.length} 张现场图` : '无现场图' }}
+                  </text>
+                </view>
               </view>
             </view>
           </template>
@@ -367,5 +472,43 @@ async function cancelRescue(row: RescueRecord) {
 .rec-time {
   font-size: 11px;
   color: #a8a199;
+}
+
+/* 咨询现场照片：缩略图一行排开，点击可预览大图 */
+.rec-photos {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 10px;
+}
+
+.rec-photo {
+  width: 56px;
+  height: 56px;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.rec-photo__img {
+  width: 100%;
+  height: 100%;
+}
+
+/* 未上传的照片占位：灰底 + 云朵斜线图标，与已上传图区分开 */
+.rec-photo--pending {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #b3aca3;
+  background: #f4f1ec;
+}
+
+.rec-pending-tag {
+  padding: 2px 7px;
+  border-radius: 6px;
+  font-size: 11px;
+  font-weight: 600;
+  color: #b3261e;
+  background: #fdecea;
 }
 </style>
