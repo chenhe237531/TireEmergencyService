@@ -26,6 +26,10 @@ export default defineManifestConfig({
   'name': VITE_APP_TITLE,
   'appid': VITE_UNI_APPID,
   'description': '',
+  // 版本事实源（issue #12 应用内更新）：本文件是 src/manifest.json（生成物，勿手改）的来源，
+  // versionCode 单调递增，由 scripts/bump-version.js 在发版时维护；App 端启动时用
+  // plus.runtime.getProperty 读到这里写入的 versionCode，与服务端 /downloads/android.json
+  // 比较（清单由 app 仓 scripts/gen-update-manifest 生成，两仓 versionCode 必须一致）。
   'versionName': '1.0.0',
   'versionCode': '100',
   'transformPx': false,
