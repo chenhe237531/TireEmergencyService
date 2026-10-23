@@ -6,11 +6,15 @@ import { PrismaService } from './prisma.service'
 import { BizError, Err } from './response'
 
 /**
- * 生产环境必须显式配置 JWT_SECRET，缺失时直接启动失败，避免用公开演示密钥签发可伪造令牌。
+ * 生产环境必须显式配置 JWT_SECRET（至少 32 字符），缺失或过短时直接启动失败，
+ * 避免用公开演示密钥或弱密钥签发可伪造令牌。
  * 本地开发保留默认值，便于开箱运行。
  */
+const JWT_MIN_LENGTH = 32
 const SECRET = process.env.JWT_SECRET || (process.env.NODE_ENV === 'production' ? '' : 'tire-demo-secret')
 if (!SECRET) throw new Error('[tire] 生产环境必须设置 JWT_SECRET（随机长字符串）')
+if (process.env.NODE_ENV === 'production' && process.env.JWT_SECRET && process.env.JWT_SECRET.length < JWT_MIN_LENGTH)
+  throw new Error(`[tire] 生产环境 JWT_SECRET 长度至少 ${JWT_MIN_LENGTH} 字符，请使用随机长字符串`)
 if (!process.env.JWT_SECRET && process.env.NODE_ENV !== 'production')
   console.warn('[tire] 未设置 JWT_SECRET，本地开发使用默认密钥；生产环境必须配置')
 
@@ -52,9 +56,11 @@ export class AudGuard implements CanActivate {
         if (driver.status !== 'active') throw new BizError(40003, '账号已被封禁，请联系平台客服')
       }
       else if (p.aud === 'admin') {
-        const staff = await this.prisma.staff.findUnique({ where: { id: p.id }, select: { status: true } })
+        // ver = 密码版本号：修改密码后 +1，旧令牌立即失效（历史签发的令牌无 ver 按 0 处理）
+        const staff = await this.prisma.staff.findUnique({ where: { id: p.id }, select: { status: true, tokenVersion: true } })
         if (!staff) throw Err.unauth()
         if (staff.status !== 'active') throw new BizError(40003, '账号已停用，请联系超级管理员')
+        if (((p.ver as number | undefined) ?? 0) !== staff.tokenVersion) throw Err.unauth()
       }
       req.user = p
       return true

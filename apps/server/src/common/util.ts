@@ -22,8 +22,10 @@ export function verifyPwd(pwd: string, stored: string) {
     const prev = Buffer.from(hash, 'hex')
     return prev.length === next.length && timingSafeEqual(prev, next)
   }
-  // 兼容旧库：sha256 哈希
-  return createHash('sha256').update(`tire:${pwd}`).digest('hex') === stored
+  // 兼容旧库：sha256 哈希（同样用常量时间比较，避免理论上的时序侧信道）
+  const legacyHash = createHash('sha256').update(`tire:${pwd}`).digest()
+  const storedBuf = Buffer.from(stored, 'hex')
+  return storedBuf.length === legacyHash.length && timingSafeEqual(storedBuf, legacyHash)
 }
 
 export function maskPhone(p?: string | null) {
@@ -57,4 +59,22 @@ export function pick<T extends object, K extends keyof T>(o: T, keys: K[]) {
   const r: any = {}
   keys.forEach((k) => { if (o[k] !== undefined) r[k] = o[k] })
   return r as Pick<T, K>
+}
+
+/** 列表分页参数归一化：page 从 1 起，pageSize 限制在 1-maxPageSize（默认 100，小程序端用 50） */
+export function pageArgs(q: { page?: string, pageSize?: string }, maxPageSize = 100) {
+  const page = Math.max(1, Number(q.page) || 1)
+  const pageSize = Math.min(maxPageSize, Math.max(1, Number(q.pageSize) || 20))
+  return { skip: (page - 1) * pageSize, take: pageSize, page, pageSize }
+}
+
+/**
+ * 中国大陆车牌：省份简称 + 发牌机关字母（无 I/O）+ 5 位普通 / 6 位新能源字母数字，可带挂/警/学后缀。
+ * 仅约束常见格式，使领馆等特种号牌按「其他」场景放行由人工核对。
+ */
+const PLATE_RE = /^[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼][A-HJ-NP-Z][A-HJ-NP-Z0-9]{5,6}[挂警学]?$/
+
+/** 车牌格式校验：空串视为未填（车牌为选填），填了就必须合法 */
+export function isValidPlateNo(v: string) {
+  return !v || PLATE_RE.test(v)
 }

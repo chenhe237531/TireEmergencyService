@@ -31,3 +31,6 @@ export const VEHICLE_STORE_CATEGORIES: Record<string, string[]> = {
 
 /** 待处理超过该分钟数视为超时，后台列表高亮 */
 export const TICKET_SLA_MINUTES = 10
+
+/** 超时判定基准时间：创建时间早于该值的待处理工单视为超时 */
+export const slaCutoff = () => new Date(Date.now() - TICKET_SLA_MINUTES * 60 * 1000)

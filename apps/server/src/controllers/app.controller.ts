@@ -6,7 +6,7 @@ import { Aud, CurrentUser, DriverUser, OptionalAuth, signToken } from '../common
 import { BizError, Err } from '../common/response'
 import { RESCUE_VEHICLE_TYPES, TICKET_STATUS_NAMES } from '../common/ticket'
 import { saveUploadFile } from '../common/upload'
-import { distanceLabel, haversineKm, pick } from '../common/util'
+import { distanceLabel, haversineKm, isValidPlateNo, pageArgs, pick } from '../common/util'
 import { demoLoginAllowed, getWxPhoneNumber, wxConfigured } from '../common/wx'
 import { PrismaService } from '../common/prisma.service'
 
@@ -29,13 +29,6 @@ export const DRIVER_ROLES: Record<string, string> = {
 
 const ACTIVE_RESCUE_STATUS = ['pending', 'contacting']
 const DUPLICATE_WINDOW_MS = 2 * 60 * 1000
-
-/** 小程序列表分页：最多 50 条/页，避免一次拉全量 */
-function pageArgs(q: { page?: string, pageSize?: string }) {
-  const page = Math.max(1, Number(q.page) || 1)
-  const pageSize = Math.min(50, Math.max(1, Number(q.pageSize) || 20))
-  return { skip: (page - 1) * pageSize, take: pageSize, page, pageSize }
-}
 
 /** 微信 code2Session 返回结构（截取需要的字段） */
 interface WxSession { openid: string, unionid?: string }
@@ -197,6 +190,7 @@ export class AppController {
     const vehicleType = body.vehicleType || 'other'
     if (!RESCUE_VEHICLE_TYPES[vehicleType]) throw Err.bad('请选择车型')
     const plateNo = (body.plateNo || '').trim().slice(0, 20)
+    if (!isValidPlateNo(plateNo)) throw Err.bad('车牌号格式不对，如 豫A8K2F6 / 豫AD12345（新能源）')
     const locationDesc = (body.locationDesc || '').trim().slice(0, 200)
 
     const lat = body.lat == null ? null : Number(body.lat)
@@ -234,7 +228,7 @@ export class AppController {
   /** 我的救援记录：只返回本人数据，不暴露内部备注 */
   @Get('rescue-alerts')
   async myRescueAlerts(@CurrentUser() u: DriverUser, @Query('page') _page?: string, @Query('pageSize') _pageSize?: string) {
-    const { skip, take, page, pageSize } = pageArgs({ page: _page, pageSize: _pageSize })
+    const { skip, take, page, pageSize } = pageArgs({ page: _page, pageSize: _pageSize }, 50)
     const where = { driverId: u.id }
     const [total, list] = await Promise.all([
       this.prisma.rescueAlert.count({ where }),
@@ -303,7 +297,7 @@ export class AppController {
   /** 我的咨询记录 */
   @Get('consults')
   async myConsults(@CurrentUser() u: DriverUser, @Query('page') _page?: string, @Query('pageSize') _pageSize?: string) {
-    const { skip, take, page, pageSize } = pageArgs({ page: _page, pageSize: _pageSize })
+    const { skip, take, page, pageSize } = pageArgs({ page: _page, pageSize: _pageSize }, 50)
     const where = { driverId: u.id }
     const [total, list] = await Promise.all([
       this.prisma.consultRequest.count({ where }),
@@ -343,6 +337,7 @@ export class AppController {
     if (!body.contactName?.trim()) throw Err.bad('请填写姓名')
     if (!/^1\d{10}$/.test(body.contactPhone || '')) throw Err.bad('请填写正确的联系电话')
     if (!body.description?.trim()) throw Err.bad('请描述故障情况')
+    if (!isValidPlateNo((body.plateNo || '').trim().slice(0, 20))) throw Err.bad('车牌号格式不对，如 豫A8K2F6 / 豫AD12345（新能源）')
     const images = Array.isArray(body.images) ? body.images.filter(i => typeof i === 'string' && i.startsWith('/uploads/')).slice(0, 9) : []
     const row = await this.prisma.consultRequest.create({
       data: {
@@ -375,7 +370,6 @@ export class AppController {
       privacyPolicy: map.privacyPolicy || '',
       shareTitle: map.shareTitle || '小蚂蚁轮胎救援',
       demoLogin: demoLoginAllowed(),
-      wxConfigured: wxConfigured(),
     }
   }
 

@@ -3,9 +3,9 @@ import { memoryStorage } from 'multer'
 import { FileInterceptor } from '@nestjs/platform-express/multer'
 import { Aud, CurrentUser, ROLE_NAMES, StaffUser, requireRole, signToken } from '../common/auth'
 import { Err } from '../common/response'
-import { RESCUE_VEHICLE_TYPES, TICKET_FLOW, TICKET_SLA_MINUTES, TICKET_STATUS_NAMES, VEHICLE_STORE_CATEGORIES } from '../common/ticket'
+import { RESCUE_VEHICLE_TYPES, TICKET_FLOW, TICKET_STATUS_NAMES, VEHICLE_STORE_CATEGORIES, slaCutoff } from '../common/ticket'
 import { saveUploadFile } from '../common/upload'
-import { addDays, distanceLabel, fmt, hashPwd, haversineKm, today, verifyPwd } from '../common/util'
+import { addDays, distanceLabel, fmt, hashPwd, haversineKm, pageArgs, today, verifyPwd } from '../common/util'
 import { DRIVER_ROLES, STORE_CATEGORIES } from './app.controller'
 import { PrismaService } from '../common/prisma.service'
 
@@ -14,14 +14,18 @@ const LOGIN_FAILED = new Map<string, { count: number, until: number }>()
 const LOGIN_WINDOW_MS = 15 * 60 * 1000
 const LOGIN_MAX_FAIL = 5
 
-function loginKey(ip: string, username: string) {
-  return `${ip}|${username.trim().toLowerCase()}`
+/** 惰性淘汰已过期的限流条目：失败记录只增不减会让 Map 无上限增长（慢速内存泄漏） */
+function sweepLoginFailed() {
+  if (LOGIN_FAILED.size < 512)
+    return
+  const now = Date.now()
+  for (const [k, v] of LOGIN_FAILED) {
+    if (v.until <= now) LOGIN_FAILED.delete(k)
+  }
 }
 
-function pageArgs(q: { page?: string, pageSize?: string }) {
-  const page = Math.max(1, Number(q.page) || 1)
-  const pageSize = Math.min(100, Math.max(1, Number(q.pageSize) || 20))
-  return { skip: (page - 1) * pageSize, take: pageSize, page, pageSize }
+function loginKey(ip: string, username: string) {
+  return `${ip}|${username.trim().toLowerCase()}`
 }
 
 @Controller('admin/auth')
@@ -31,6 +35,7 @@ export class AdminAuthController {
   /** 后台登录：scrypt 密码校验（兼容旧 sha256 并自动升级），签发 admin 令牌 */
   @Post('login')
   async login(@Body() body: { username: string, password: string }, @Req() req: any) {
+    sweepLoginFailed()
     const key = loginKey(req.ip || req.socket?.remoteAddress || '', body.username || '')
     const fail = LOGIN_FAILED.get(key)
     if (fail && fail.until > Date.now() && fail.count >= LOGIN_MAX_FAIL)
@@ -47,7 +52,8 @@ export class AdminAuthController {
       await this.prisma.staff.update({ where: { id: staff.id }, data: { password: hashPwd(body.password || '') } })
     await this.prisma.staff.update({ where: { id: staff.id }, data: { lastLoginAt: new Date() } })
     return {
-      accessToken: signToken({ id: staff.id, role: staff.role, name: staff.name }, 'admin'),
+      // ver = 密码版本号，修改密码后 +1，用于让旧令牌失效
+      accessToken: signToken({ id: staff.id, role: staff.role, name: staff.name, ver: staff.tokenVersion }, 'admin'),
       user: { id: staff.id, name: staff.name, username: staff.username, role: staff.role, roleName: ROLE_NAMES[staff.role] || staff.role },
     }
   }
@@ -59,7 +65,8 @@ export class AdminAuthController {
     if (!body.newPassword || body.newPassword.length < 8) throw Err.bad('新密码至少 8 位')
     const staff = await this.prisma.staff.findUnique({ where: { id: u.id } })
     if (!staff || !verifyPwd(body.oldPassword || '', staff.password)) throw Err.bad('原密码错误')
-    await this.prisma.staff.update({ where: { id: staff.id }, data: { password: hashPwd(body.newPassword) } })
+    // tokenVersion +1：改密后旧令牌立即失效，需用新密码重新登录
+    await this.prisma.staff.update({ where: { id: staff.id }, data: { password: hashPwd(body.newPassword), tokenVersion: { increment: 1 } } })
     return { ok: true }
   }
 }
@@ -186,7 +193,7 @@ export class AdminController {
 
   @Get('rescue-alerts/unread-count')
   async rescueUnread() {
-    const overdueBefore = new Date(Date.now() - TICKET_SLA_MINUTES * 60 * 1000)
+    const overdueBefore = slaCutoff()
     const [rescue, consult, overdueRescue, overdueConsult] = await Promise.all([
       this.prisma.rescueAlert.count({ where: { status: 'pending' } }),
       this.prisma.consultRequest.count({ where: { status: 'pending' } }),
@@ -212,7 +219,7 @@ export class AdminController {
       ...(status ? { status } : {}),
       ...(start || end ? { createdAt: range } : {}),
     }
-    const overdueBefore = new Date(Date.now() - TICKET_SLA_MINUTES * 60 * 1000)
+    const overdueBefore = slaCutoff()
     const [total, list] = await Promise.all([
       this.prisma.rescueAlert.count({ where }),
       this.prisma.rescueAlert.findMany({
@@ -363,7 +370,7 @@ export class AdminController {
       ...(keyword ? { OR: [{ contactName: { contains: keyword } }, { contactPhone: { contains: keyword } }, { plateNo: { contains: keyword } }] } : {}),
       ...(start || end ? { createdAt: range } : {}),
     }
-    const overdueBefore = new Date(Date.now() - TICKET_SLA_MINUTES * 60 * 1000)
+    const overdueBefore = slaCutoff()
     const [total, list] = await Promise.all([
       this.prisma.consultRequest.count({ where }),
       this.prisma.consultRequest.findMany({ where, orderBy: { id: 'desc' }, skip, take }),
