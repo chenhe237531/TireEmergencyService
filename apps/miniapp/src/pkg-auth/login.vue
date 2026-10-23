@@ -19,6 +19,9 @@ import { deviceId, go, toast } from '@/tire/utils'
 
 const tire = useTire()
 
+/** 「开发演示模式」提示只在开发/联调构建显示；生产走真实微信登录，这句话只会让用户困惑 */
+const showDemoHint = import.meta.env.MODE !== 'production'
+
 /** 1 = 授权登录；2 = 完善身份 */
 const step = ref<1 | 2>(1)
 const loading = ref(false)
@@ -372,7 +375,7 @@ async function submit() {
         </view>
 
         <!-- #ifndef APP-PLUS -->
-        <view class="mt-4 rounded-xl bg-[#FBF8F3] px-3 py-2.5">
+        <view v-if="showDemoHint" class="mt-4 rounded-xl bg-[#FBF8F3] px-3 py-2.5">
           <view class="flex items-start gap-2 text-[12px] text-[#8F8981] leading-relaxed">
             <text class="i-tabler-info-circle mt-[2px] text-[14px]" />
             <text>开发演示模式：同一设备自动保持同一账号，换设备即为新用户。</text>

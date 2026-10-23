@@ -240,6 +240,7 @@ function resetForm() {
             :class="{ 'is-focus': focused === 'plateNo' }"
             placeholder="如 豫A8K2F6"
             :maxlength="12"
+            :cursor-spacing="90"
             @focus="onFieldFocus('plateNo')"
             @blur="focused = ''"
           >
@@ -251,6 +252,7 @@ function resetForm() {
             :class="{ 'is-focus': focused === 'carModel' }"
             placeholder="如 解放J6 重卡 / 大众迈腾"
             :maxlength="30"
+            :cursor-spacing="90"
             @focus="onFieldFocus('carModel')"
             @blur="focused = ''"
           >
@@ -287,6 +289,7 @@ function resetForm() {
               :class="{ 'is-focus': focused === 'locDesc' }"
               placeholder="补充位置：如 京港澳高速 K680 应急车道 / 郑州东站南广场"
               :maxlength="60"
+              :cursor-spacing="90"
               @focus="onFieldFocus('locDesc')"
               @blur="focused = ''"
             >
@@ -309,6 +312,8 @@ function resetForm() {
             placeholder="示例：右前轮爆胎，车满载停在高速应急车道，需要上门换胎"
             :maxlength="500"
             :auto-height="false"
+            :cursor-spacing="110"
+            :show-confirm-bar="false"
             @focus="onFieldFocus('description')"
             @blur="focused = ''"
           />
@@ -360,6 +365,7 @@ function resetForm() {
             :class="{ 'is-error': touched && errors.contactName, 'is-focus': focused === 'contactName' }"
             placeholder="怎么称呼你"
             :maxlength="20"
+            :cursor-spacing="90"
             @focus="onFieldFocus('contactName')"
             @blur="focused = ''"
           >
@@ -371,6 +377,7 @@ function resetForm() {
             :class="{ 'is-error': touched && errors.contactPhone, 'is-focus': focused === 'contactPhone' }"
             type="number"
             :maxlength="11"
+            :cursor-spacing="90"
             placeholder="11 位手机号"
             @focus="onFieldFocus('contactPhone')"
             @blur="focused = ''"
