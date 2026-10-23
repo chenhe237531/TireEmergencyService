@@ -3,13 +3,15 @@
  * 联系客服（pkg-me）
  *
  * 电话优先（司机在路上，打电话最快），二维码作为补充。
- * 二维码：MP 端点击保存到相册并处理授权拒绝；H5 端提示长按保存。
+ * 拨号：App / 小程序用 uni.makePhoneCall 一键拉起系统拨号，H5 走 tel: 协议；
+ * H5 / 小程序里不方便拉起拨号时可复制号码；二维码保存与权限引导统一走 tire/app/media。
  */
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import TButton from '@/components/tire/TButton.vue'
 import TState from '@/components/tire/TState.vue'
 import { http } from '@/tire/request'
+import { openAlbumPermissionSetting, saveImageToAlbum } from '@/tire/app/media'
 import { absUrl, call, toast } from '@/tire/utils'
 
 const settings = ref<Record<string, string>>({})
@@ -43,33 +45,45 @@ function onCall() {
   call(phone.value)
 }
 
+/** 复制号码：H5 / 部分小程序环境不能直接拉起拨号时兜底 */
+function onCopyPhone() {
+  if (!phone.value) {
+    toast('客服电话获取中，请稍后再试')
+    return
+  }
+  uni.setClipboardData({
+    data: phone.value,
+    success: () => toast('客服电话已复制'),
+  })
+}
+
 function onQrTap() {
   if (!qr.value)
     return
   // #ifdef MP-WEIXIN
   uni.downloadFile({
     url: qr.value,
-    success: (r) => {
-      uni.saveImageToPhotosAlbum({
-        filePath: r.tempFilePath,
-        success: () => toast('已保存到相册'),
-        fail: (err) => {
-          if (/auth deny|auth denied|authorize/i.test(err.errMsg || '')) {
-            uni.showModal({
-              title: '需要相册权限',
-              content: '保存二维码需要允许访问相册，可在设置里开启。',
-              confirmText: '去设置',
-              success: (m) => {
-                if (m.confirm)
-                  uni.openSetting({})
-              },
-            })
-          }
-          else {
-            toast('保存失败，请长按二维码保存')
-          }
-        },
-      })
+    success: async (r) => {
+      const result = await saveImageToAlbum(r.tempFilePath)
+      if (result === 'saved') {
+        toast('已保存到相册')
+        return
+      }
+      // 权限被拒不循环弹窗：只引导一次系统设置，由用户自行决定
+      if (result === 'denied') {
+        uni.showModal({
+          title: '需要相册权限',
+          content: '保存二维码需要允许访问相册，可在设置里开启。',
+          confirmText: '去设置',
+          success: (m) => {
+            if (m.confirm)
+              openAlbumPermissionSetting()
+          },
+        })
+      }
+      else {
+        toast('保存失败，请长按二维码保存')
+      }
     },
     fail: () => toast('保存失败，请长按二维码保存'),
   })
@@ -126,6 +140,9 @@ function onQrLongPress() {
             <TButton block size="lg" icon="i-tabler-phone-call" :disabled="!phone" @click="onCall">
               {{ phone ? '拨打电话' : '电话暂未配置' }}
             </TButton>
+          </view>
+          <view v-if="phone" class="mt-3 text-center">
+            <text class="contact-copy" @click="onCopyPhone">复制号码</text>
           </view>
           <view class="mt-2 text-center text-[11px] text-[#A8A199]">
             点击后由系统拨号，不会自动外呼
@@ -212,6 +229,15 @@ function onQrLongPress() {
   letter-spacing: 0.5px;
   color: var(--ink);
   font-variant-numeric: tabular-nums;
+}
+
+/* 复制号码：小号可点文本，与主拨号按钮形成主次 */
+.contact-copy {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--brand-dark);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .contact-qr {

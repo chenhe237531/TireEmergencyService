@@ -50,8 +50,10 @@ export default defineManifestConfig({
       autoclose: true,
       delay: 0,
     },
-    /* 模块配置 */
-    modules: {},
+    /* 模块配置：Share 供安卓系统分享面板（uni.share provider=system）分享 H5 链接 */
+    modules: {
+      Share: {},
+    },
     /* 应用发布信息 */
     distribute: {
       /* android打包配置 */
