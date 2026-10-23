@@ -1,14 +1,13 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted, reactive, ref } from "vue";
-import dayjs from "dayjs";
 import { ElMessageBox } from "element-plus";
 import IconPlus from "~icons/tabler/plus";
 import IconSearch from "~icons/tabler/search";
 import { message } from "@/utils/message";
 import { faqDelete, faqList, faqUpdate } from "@/api/tire";
-import { useUserStoreHook } from "@/store/modules/user";
 import type { FaqItem } from "@/api/tire";
 import FaqFormDialog from "./FaqFormDialog.vue";
+import { formatTime, useIsSuperAdmin } from "../common";
 
 defineOptions({ name: "TireFaq" });
 
@@ -21,17 +20,12 @@ const list = ref<FaqItem[]>([]);
 const statusLoadingId = ref<number | null>(null);
 const deletingId = ref<number | null>(null);
 /** 删除属于高风险操作，仅超级管理员显示入口；运营仍可新增/编辑/隐藏 */
-const canDelete = computed(() =>
-  useUserStoreHook().roles.includes("super_admin")
-);
+const canDelete = useIsSuperAdmin();
 
 const query = reactive({ keyword: "" });
 
 const dialogVisible = ref(false);
 const editingRow = ref<FaqItem | null>(null);
-
-const formatTime = (value?: string) =>
-  value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "—";
 
 /** 表格里答案最多展示 50 字，完整内容放 tooltip，避免撑破列宽 */
 const truncate = (text?: string, max = 50) => {

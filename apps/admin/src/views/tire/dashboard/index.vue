@@ -139,7 +139,7 @@ const statCards = computed<StatCardModel[]>(() => {
       value: s.pendingConsult,
       desc: "等待客服电话跟进",
       icon: IconPhoneCall,
-      tone: "warning",
+      tone: "danger",
       dot: s.pendingConsult > 0,
       to: "/tire/consult"
     },
@@ -391,7 +391,7 @@ onUnmounted(stopPolling);
         <el-col :xs="24" :lg="12" class="mb-3">
           <PendingList
             title="待处理咨询"
-            accent="warning"
+            accent="danger"
             :rows="consultRows"
             :loading="firstLoading"
             empty-text="暂无待处理咨询"

@@ -1,15 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, ref, watch } from "vue";
-import dayjs from "dayjs";
 import { message } from "@/utils/message";
-import {
-  ORDER_STATUS,
-  rescueDetail,
-  rescueHandle,
-  rescueNearbyStores,
-  statusFlow,
-  statusTag
-} from "@/api/tire";
+import { ORDER_STATUS, rescueDetail, rescueHandle, rescueNearbyStores, statusFlow } from "@/api/tire";
 import type {
   NearbyStoreItem,
   RescueDetail,
@@ -17,6 +9,8 @@ import type {
   TicketLogItem
 } from "@/api/tire";
 import IconCopy from "~icons/tabler/copy";
+import { formatTime, logStatusText, tagType } from "../common";
+import type { TagType } from "../common";
 
 defineOptions({ name: "TireRescueHandleDialog" });
 
@@ -60,16 +54,6 @@ const targetOptions = computed(() => {
 const isTerminal = computed(() => targetOptions.value.length === 0);
 
 const NOTE_TEMPLATES = ["已电话联系司机", "司机已自行处理", "已转门店跟进"];
-
-/** el-tag 的 type 是字面量联合，字典值是 string，这里收窄一次供模板使用 */
-type TagType = "primary" | "success" | "info" | "warning" | "danger";
-const tagType = (status: string): TagType =>
-  (statusTag[status] || "info") as TagType;
-
-const formatTime = (value?: string | null) =>
-  value && dayjs(value).isValid()
-    ? dayjs(value).format("YYYY-MM-DD HH:mm")
-    : "—";
 
 function copyPhone(phone: string) {
   if (!phone) return;
@@ -151,11 +135,6 @@ async function handleSubmit() {
   }
 }
 
-const logStatus = (log: TicketLogItem) => {
-  const from = log.fromStatus ? `${ORDER_STATUS[log.fromStatus] || log.fromStatus}` : "";
-  const to = ORDER_STATUS[log.toStatus] || log.toStatus || "创建";
-  return from ? `${from} → ${to}` : to;
-};
 </script>
 
 <template>
@@ -333,7 +312,7 @@ const logStatus = (log: TicketLogItem) => {
               :timestamp="formatTime(log.createdAt)"
               placement="top"
             >
-              <div class="text-sm font-medium">{{ logStatus(log) }}</div>
+              <div class="text-sm font-medium">{{ logStatusText(log) }}</div>
               <div class="mt-0.5 text-xs text-[var(--el-text-color-secondary)]">
                 {{ log.operatorName || "系统" }}{{ log.note ? ` · ${log.note}` : "" }}
               </div>

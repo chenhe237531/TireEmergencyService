@@ -7,7 +7,7 @@ import IconUser from "~icons/tabler/user";
 import { message } from "@/utils/message";
 import { DRIVER_ROLES, driverList, driverUpdateStatus } from "@/api/tire";
 import type { DriverItem } from "@/api/tire";
-import { useUserStoreHook } from "@/store/modules/user";
+import { formatTime, useIsSuperAdmin } from "../common";
 
 defineOptions({ name: "TireDriverList" });
 
@@ -34,7 +34,7 @@ const loading = ref(false);
 const list = ref<DriverItem[]>([]);
 const statusLoadingId = ref<number | null>(null);
 /** 封禁/解封属于高风险操作，仅超级管理员可用 */
-const canBan = computed(() => useUserStoreHook().roles.includes("super_admin"));
+const canBan = useIsSuperAdmin();
 
 const query = reactive({ keyword: "", role: "" });
 const pagination = reactive({ page: 1, pageSize: 10, total: 0 });
@@ -49,9 +49,6 @@ const statValue = computed(() => ({
   filled: statsLoaded.value && statsComplete.value ? stats.roleFilled : "—",
   week: statsLoaded.value && statsComplete.value ? stats.weekNew : "—"
 }));
-
-const formatTime = (value?: string | null) =>
-  value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "";
 
 /** 无头像时用昵称首字占位，昵称为空则退回图标 */
 const avatarLetter = (row: DriverItem) =>

@@ -8,18 +8,18 @@ import {
   reactive,
   ref
 } from "vue";
-import dayjs from "dayjs";
 import { ElNotification } from "element-plus";
 import { message } from "@/utils/message";
-import {
-  ORDER_STATUS,
-  rescueList,
-  rescueUnreadCount,
-  statusFlow,
-  statusTag
-} from "@/api/tire";
+import { ORDER_STATUS, rescueList, rescueUnreadCount, statusFlow } from "@/api/tire";
 import type { RescueItem } from "@/api/tire";
 import HandleDialog from "./HandleDialog.vue";
+import {
+  TICKET_TABS as TABS,
+  fetchPageGuarded,
+  formatTime,
+  tagType
+} from "../common";
+import type { TagType } from "../common";
 import IconAlertTriangle from "~icons/tabler/alert-triangle";
 import IconCircleCheck from "~icons/tabler/circle-check";
 import IconCopy from "~icons/tabler/copy";
@@ -32,19 +32,6 @@ const asRescue = (row: unknown) => row as RescueItem;
 
 /** 待处理数量轮询间隔：30 秒（keepAlive 失活时停止） */
 const POLL_INTERVAL = 30 * 1000;
-
-const TABS = [
-  { value: "all", label: "全部" },
-  { value: "pending", label: "待处理" },
-  { value: "contacting", label: "跟进中" },
-  { value: "resolved", label: "已解决" },
-  { value: "cancelled", label: "已取消" }
-];
-
-/** el-tag 的 type 是字面量联合，字典值是 string，这里收窄一次供模板使用 */
-type TagType = "primary" | "success" | "info" | "warning" | "danger";
-const tagType = (status: string): TagType =>
-  (statusTag[status] || "info") as TagType;
 
 const loading = ref(false);
 const list = ref<RescueItem[]>([]);
@@ -64,11 +51,6 @@ let pollTimer: number | null = null;
 let lastUnreadCount: number | null = null;
 let hasActivated = false;
 
-const formatTime = (value?: string | null) =>
-  value && dayjs(value).isValid()
-    ? dayjs(value).format("YYYY-MM-DD HH:mm")
-    : "—";
-
 /** 无后续流转路径即为终态，处理按钮禁用（与后端状态机一致） */
 const isTerminal = (status: string) => (statusFlow[status] || []).length === 0;
 
@@ -87,21 +69,11 @@ async function getList() {
       start: query.dateRange?.[0] || "",
       end: query.dateRange?.[1] || ""
     };
-    let res = await rescueList({
-      ...params,
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    });
     // 处理或筛选后总数变小，当前页可能超界，回退到最后一页再取一次
-    const maxPage = Math.max(1, Math.ceil(res.total / pagination.pageSize));
-    if (pagination.page > maxPage) {
-      pagination.page = maxPage;
-      res = await rescueList({
-        ...params,
-        page: maxPage,
-        pageSize: pagination.pageSize
-      });
-    }
+    const res = await fetchPageGuarded(
+      page => rescueList({ ...params, page, pageSize: pagination.pageSize }),
+      pagination
+    );
     list.value = res.list || [];
     pagination.total = res.total || 0;
   } catch (err) {

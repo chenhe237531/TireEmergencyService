@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted, reactive, ref } from "vue";
-import dayjs from "dayjs";
 import { ElMessageBox } from "element-plus";
 import IconPlus from "~icons/tabler/plus";
 import { message } from "@/utils/message";
@@ -11,8 +10,8 @@ import {
   storeUpdate
 } from "@/api/tire";
 import type { StoreItem } from "@/api/tire";
-import { useUserStoreHook } from "@/store/modules/user";
 import StoreFormDialog from "./StoreFormDialog.vue";
+import { formatTime, useIsSuperAdmin } from "../common";
 
 defineOptions({ name: "TireStoreList" });
 
@@ -20,9 +19,7 @@ defineOptions({ name: "TireStoreList" });
 const asStore = (row: unknown) => row as StoreItem;
 
 /** 删除门店仅超级管理员可用；运营仍可新增/编辑/隐藏 */
-const canDelete = computed(() =>
-  useUserStoreHook().roles.includes("super_admin")
-);
+const canDelete = useIsSuperAdmin();
 
 /** 分类 → el-tag 类型，同分类保持同色，方便快速扫读 */
 /** el-tag 的类型取值，避免字典的 string 与组件联合类型不兼容 */
@@ -52,9 +49,6 @@ const pagination = reactive({ page: 1, pageSize: 10, total: 0 });
 
 const dialogVisible = ref(false);
 const editingRow = ref<StoreItem | null>(null);
-
-const formatTime = (value?: string) =>
-  value ? dayjs(value).format("YYYY-MM-DD HH:mm") : "—";
 
 async function getList() {
   loading.value = true;

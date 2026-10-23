@@ -1,5 +1,7 @@
 import { h, defineComponent } from "vue";
+import type { Component, PropType } from "vue";
 import { Icon as IconifyIcon, addIcon } from "@iconify/vue/dist/offline";
+import type { IconifyIcon as IconifyIconData } from "@iconify/vue";
 
 // Iconify Icon在Vue里本地使用（用于内网环境）
 export default defineComponent({
@@ -7,12 +9,20 @@ export default defineComponent({
   components: { IconifyIcon },
   props: {
     icon: {
+      type: [String, Object, Function] as PropType<
+        string | IconifyIconData | Component
+      >,
       default: null
     }
   },
   render() {
-    // addIcon 的签名要求 name 为 string，离线图标对象由调用方保证结构，这里按原逻辑透传
-    if (typeof this.icon === "object") addIcon(this.icon as any, this.icon as any);
+    // addIcon 的签名要求 name 为 string；离线图标对象由调用方保证结构，
+    // 历史行为是把对象自身当 name 透传，这里保留该行为、只做单点收窄
+    if (typeof this.icon === "object")
+      addIcon(
+        this.icon as unknown as string,
+        this.icon as IconifyIconData
+      );
     const attrs = this.$attrs;
     if (typeof this.icon === "string") {
       return h(
