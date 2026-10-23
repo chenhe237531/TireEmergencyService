@@ -406,6 +406,55 @@ export class AppController {
     }
   }
 
+  /** 救援记录司机可见视图：列表与详情共用，保证两处字段完全一致 */
+  private rescueView(r: {
+    id: number, vehicleType: string, plateNo: string, lat: number | null, lng: number | null,
+    locationDesc: string, status: string, createdAt: Date, updatedAt: Date,
+    assignedStore: { id: number, name: string, category: string, areaLabel: string } | null,
+  }) {
+    return {
+      id: r.id,
+      vehicleType: r.vehicleType,
+      vehicleTypeName: RESCUE_VEHICLE_TYPES[r.vehicleType] || '其他',
+      plateNo: r.plateNo,
+      lat: r.lat,
+      lng: r.lng,
+      locationDesc: r.locationDesc,
+      status: r.status,
+      statusName: TICKET_STATUS_NAMES[r.status] || r.status,
+      assignedStore: r.assignedStore ? {
+        id: r.assignedStore.id,
+        name: r.assignedStore.name,
+        category: r.assignedStore.category,
+        categoryName: STORE_CATEGORIES[r.assignedStore.category] || r.assignedStore.category,
+        areaLabel: r.assignedStore.areaLabel,
+      } : null,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    }
+  }
+
+  /** 咨询记录司机可见视图：列表与详情共用 */
+  private consultView(r: {
+    id: number, plateNo: string, carModel: string, lat: number | null, lng: number | null,
+    locationDesc: string, description: string, images: unknown, status: string, createdAt: Date, updatedAt: Date,
+  }) {
+    return {
+      id: r.id,
+      plateNo: r.plateNo,
+      carModel: r.carModel,
+      lat: r.lat,
+      lng: r.lng,
+      locationDesc: r.locationDesc,
+      description: r.description,
+      images: Array.isArray(r.images) ? r.images : [],
+      status: r.status,
+      statusName: TICKET_STATUS_NAMES[r.status] || r.status,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    }
+  }
+
   /** 我的救援记录：只返回本人数据，不暴露内部备注 */
   @Get('rescue-alerts')
   async myRescueAlerts(@CurrentUser() u: DriverUser, @Query('page') _page?: string, @Query('pageSize') _pageSize?: string) {
@@ -422,30 +471,22 @@ export class AppController {
       }),
     ])
     return {
-      list: list.map(r => ({
-        id: r.id,
-        vehicleType: r.vehicleType,
-        vehicleTypeName: RESCUE_VEHICLE_TYPES[r.vehicleType] || '其他',
-        plateNo: r.plateNo,
-        lat: r.lat,
-        lng: r.lng,
-        locationDesc: r.locationDesc,
-        status: r.status,
-        statusName: TICKET_STATUS_NAMES[r.status] || r.status,
-        assignedStore: r.assignedStore ? {
-          id: r.assignedStore.id,
-          name: r.assignedStore.name,
-          category: r.assignedStore.category,
-          categoryName: STORE_CATEGORIES[r.assignedStore.category] || r.assignedStore.category,
-          areaLabel: r.assignedStore.areaLabel,
-        } : null,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      })),
+      list: list.map(r => this.rescueView(r)),
       total,
       page,
       pageSize,
     }
+  }
+
+  /** 救援工单详情：仅本人可见，字段与列表同源（记录详情页 / 通知点击直达） */
+  @Get('rescue-alerts/:id')
+  async rescueDetail(@CurrentUser() u: DriverUser, @Param('id', ParseIntPipe) id: number) {
+    const r = await this.prisma.rescueAlert.findFirst({
+      where: { id, driverId: u.id },
+      include: { assignedStore: { select: { id: true, name: true, category: true, areaLabel: true } } },
+    })
+    if (!r) throw Err.notFound('求助记录不存在')
+    return this.rescueView(r)
   }
 
   /** 司机取消求助：仅待处理 / 跟进中可取消，取消后后台可见操作流水 */
@@ -485,24 +526,19 @@ export class AppController {
       this.prisma.consultRequest.findMany({ where, orderBy: { id: 'desc' }, skip, take }),
     ])
     return {
-      list: list.map(r => ({
-        id: r.id,
-        plateNo: r.plateNo,
-        carModel: r.carModel,
-        lat: r.lat,
-        lng: r.lng,
-        locationDesc: r.locationDesc,
-        description: r.description,
-        images: r.images || [],
-        status: r.status,
-        statusName: TICKET_STATUS_NAMES[r.status] || r.status,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      })),
+      list: list.map(r => this.consultView(r)),
       total,
       page,
       pageSize,
     }
+  }
+
+  /** 咨询记录详情：仅本人可见，字段与列表同源 */
+  @Get('consults/:id')
+  async consultDetail(@CurrentUser() u: DriverUser, @Param('id', ParseIntPipe) id: number) {
+    const r = await this.prisma.consultRequest.findFirst({ where: { id, driverId: u.id } })
+    if (!r) throw Err.notFound('咨询记录不存在')
+    return this.consultView(r)
   }
 
   /** 服务咨询表单：游客可提交（自带联系方式），登录则关联司机 */

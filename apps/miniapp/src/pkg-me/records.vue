@@ -5,40 +5,21 @@
  * 司机查看自己提交的救援 / 咨询服务进度；待处理与跟进中的救援可主动取消。
  * 咨询记录展示现场照片；文字先提交、照片未传成功的在这里标记「未上传」并可重试补传。
  * 门店只展示名称与模糊区域，不暴露电话和详细地址。
+ * 页面可见期间每 30 秒轮询一次（issue #8）：状态变化由轮询链路统一提示，
+ * 静默刷新的快照通过 RECORDS_REFRESH_EVENT 更新列表。
  */
 import { computed, ref } from 'vue'
-import { onPullDownRefresh, onShow } from '@dcloudio/uni-app'
+import { onHide, onPullDownRefresh, onShow, onUnload } from '@dcloudio/uni-app'
 import TButton from '@/components/tire/TButton.vue'
 import TState from '@/components/tire/TState.vue'
 import TSkeleton from '@/components/tire/TSkeleton.vue'
 import { http, uploadImage } from '@/tire/request'
 import { loadPendingPhotos, removePendingPhotos } from '@/tire/app/photoQueue'
 import type { PendingPhoto } from '@/tire/app/photoQueue'
+import { holdRecordsPolling, markRecordLocalStatus, RECORDS_REFRESH_EVENT } from '@/tire/app/recordsPoll'
+import type { ConsultRecord, RescueRecord } from '@/tire/app/records'
 import { retryWithBackoff } from '@/tire/app/retry'
 import { absUrl, go, toast } from '@/tire/utils'
-
-interface RescueRecord {
-  id: number
-  vehicleType: string
-  vehicleTypeName: string
-  plateNo: string
-  locationDesc: string
-  status: string
-  statusName: string
-  assignedStore?: { id: number, name: string, categoryName: string, areaLabel: string } | null
-  createdAt: string
-}
-
-interface ConsultRecord {
-  id: number
-  plateNo: string
-  carModel: string
-  description: string
-  images: string[]
-  status: string
-  statusName: string
-  createdAt: string
-}
 
 const activeTab = ref<'rescue' | 'consult'>('rescue')
 const rescues = ref<RescueRecord[]>([])
@@ -109,7 +90,34 @@ async function load(opts: { silent?: boolean } = {}) {
   }
 }
 
-onShow(() => load())
+/** 轮询持有句柄：页面可见期间每 30 秒静默刷新列表并感知状态变化 */
+let releasePolling: (() => void) | null = null
+
+/**
+ * 轮询快照回流：静默更新两类列表与未上传照片标记。
+ * 状态变化的 toast / 后台本地通知由轮询链路统一负责，这里只更新数据。
+ */
+function onRefreshed(snapshot: { rescues: RescueRecord[], consults: ConsultRecord[] }) {
+  rescues.value = snapshot.rescues
+  consults.value = snapshot.consults
+  refreshPending()
+}
+
+function stopPolling() {
+  releasePolling?.()
+  releasePolling = null
+  uni.$off(RECORDS_REFRESH_EVENT, onRefreshed)
+}
+
+onShow(() => {
+  load()
+  // 进入记录页立即拉取并开始 30 秒轮询；页面隐藏时释放（issue #8）
+  releasePolling = holdRecordsPolling()
+  // 轮询快照回流：静默更新两类列表；$off 在 stopPolling 中配对卸载
+  uni.$on(RECORDS_REFRESH_EVENT, onRefreshed)
+})
+onHide(() => stopPolling())
+onUnload(() => stopPolling())
 onPullDownRefresh(async () => {
   await load({ silent: true })
   uni.stopPullDownRefresh()
@@ -117,6 +125,11 @@ onPullDownRefresh(async () => {
 
 function switchTab(tab: 'rescue' | 'consult') {
   activeTab.value = tab
+}
+
+/** 卡片点击查看详情：字段与后台一致（issue #8 验收） */
+function goDetail(type: 'rescue' | 'consult', id: number) {
+  go(`/pkg-me/record-detail?type=${type}&id=${id}`)
 }
 
 /** 预览咨询现场图（大图走 absUrl 拼服务端地址） */
@@ -198,6 +211,8 @@ async function cancelRescue(row: RescueRecord) {
     await http.patch(`/app/rescue-alerts/${row.id}/cancel`, undefined, { silent: true })
     row.status = 'cancelled'
     row.statusName = '已取消'
+    // 自己的取消不算「状态变化」：同步轮询基线，避免 30 秒后自我提醒
+    markRecordLocalStatus('rescue', row.id, 'cancelled', '已取消')
     toast('已取消，客服将不再派单')
   }
   catch (e: any) {
@@ -267,7 +282,7 @@ async function cancelRescue(row: RescueRecord) {
         <view v-else class="flex flex-col gap-2.5">
           <!-- 救援记录 -->
           <template v-if="activeTab === 'rescue'">
-            <view v-for="row in rescues" :key="row.id" class="t-card rec-card">
+            <view v-for="row in rescues" :key="row.id" class="t-card rec-card" @click="goDetail('rescue', row.id)">
               <view class="flex items-start justify-between gap-2">
                 <view class="min-w-0">
                   <view class="flex items-center gap-2">
@@ -309,7 +324,7 @@ async function cancelRescue(row: RescueRecord) {
 
           <!-- 咨询记录 -->
           <template v-else>
-            <view v-for="row in consults" :key="row.id" class="t-card rec-card">
+            <view v-for="row in consults" :key="row.id" class="t-card rec-card" @click="goDetail('consult', row.id)">
               <view class="flex items-start justify-between gap-2">
                 <view class="min-w-0">
                   <view class="flex items-center gap-2">
@@ -328,7 +343,7 @@ async function cancelRescue(row: RescueRecord) {
 
               <!-- 现场照片：已上传的可点查看，未上传的显示占位标记 -->
               <view v-if="row.images?.length || pendingPhotosOf(row.id).length" class="rec-photos">
-                <view v-for="(img, i) in row.images" :key="img" class="rec-photo" @click="previewConsultImages(row, i)">
+                <view v-for="(img, i) in row.images" :key="img" class="rec-photo" @click.stop="previewConsultImages(row, i)">
                   <image class="rec-photo__img" :src="absUrl(img)" mode="aspectFill" />
                 </view>
                 <view v-for="p in pendingPhotosOf(row.id)" :key="p.id" class="rec-photo rec-photo--pending">

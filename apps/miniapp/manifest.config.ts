@@ -54,9 +54,11 @@ export default defineManifestConfig({
       autoclose: true,
       delay: 0,
     },
-    /* 模块配置：Share 供安卓系统分享面板（uni.share provider=system）分享 H5 链接 */
+    /* 模块配置：Share 供安卓系统分享面板（uni.share provider=system）分享 H5 链接；
+       Push 供本地通知（plus.push.createMessage，issue #8 后台存活时提醒工单状态变化），不接推送服务 */
     modules: {
       Share: {},
+      Push: {},
     },
     /* 应用发布信息 */
     distribute: {
