@@ -30,20 +30,52 @@ model Staff {
   createdAt    DateTime  @default(now())
 }
 
-/** 司机端用户（小程序），openid 首次登录自动创建 */
+/** 司机端用户：手机号是稳定身份（可空唯一，未绑定为 NULL），openid 是微信渠道绑定 */
 model Driver {
   id          Int       @id @default(autoincrement())
   openid      String?   @unique
   nickname    String    @default("微信用户")
   avatarUrl   String    @default("")
-  phone       String    @default("")
+  phone       String?   @unique // 司机稳定身份；未绑定为 NULL（历史空串由 normalize-phones 迁移为 NULL）
   role        String    @default("") // private_owner 私人车主 | fleet 车队 | store 服务门店；空=未完善身份
-  status      String    @default("active") // active | blocked
+  status      String    @default("active") // active | blocked | merged 被合并进主账号 | deleted 已注销（ADR-0006 匿名化骨架）
   lastLoginAt DateTime?
+  mergedIntoId Int?     // 账号被合并后指向主账号 id（ADR-0002 审计用）
+  mergedAt    DateTime?
+  deletedAt   DateTime? // 账号注销时间；注销后同手机号可重新注册（ADR-0006）
   createdAt   DateTime  @default(now())
   viewLogs    ViewLog[]
   rescues     RescueAlert[]
   consults    ConsultRequest[]
+}
+
+/** 账号合并流水：微信与安卓同手机号归并到一个主账号时留痕，后台可追溯（ADR-0002） */
+model DriverMergeLog {
+  id           Int      @id @default(autoincrement())
+  fromDriverId Int // 被合并（清空 openid/phone，status=merged）的司机
+  toDriverId   Int // 保留的主账号（创建时间更早者）
+  phone        String   @default("") // 触发合并的手机号
+  reason       String   @default("") // wx-bind-merge 微信绑定合并 | data-migration 历史数据迁移
+  createdAt    DateTime @default(now())
+
+  @@index([toDriverId, createdAt])
+  @@index([fromDriverId])
+}
+
+/** 短信验证码：只存 HMAC-SHA256 哈希，明文不落库；成功使用后置 consumedAt，防重复使用 */
+model SmsCode {
+  id         Int       @id @default(autoincrement())
+  phone      String
+  scene      String    @default("login") // login 登录 | cancel 注销
+  codeHash   String
+  ip         String    @default("")
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, scene, createdAt])
+  @@index([ip, createdAt])
 }
 
 // ─── 门店（信息由后台录入；真实地址/电话仅后台可见，端上只做模糊展示） ───
@@ -87,9 +119,11 @@ model RescueAlert {
   assignedStoreId Int?
   assignedStore   Store?  @relation(fields: [assignedStoreId], references: [id])
   assignedAt   DateTime?
+  clientRequestId String? // 客户端幂等键（UUID）；旧客户端不传时为空，不参与去重
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  @@unique([driverId, clientRequestId])
   @@index([driverId, createdAt])
   @@index([status, createdAt])
 }
@@ -112,9 +146,11 @@ model ConsultRequest {
   note         String    @default("") // mysql: @db.Text
   handledBy    String    @default("")
   handledAt    DateTime?
+  clientRequestId String? // 客户端幂等键（UUID）；游客或旧客户端为空
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  @@unique([driverId, clientRequestId])
   @@index([driverId, createdAt])
 }
 

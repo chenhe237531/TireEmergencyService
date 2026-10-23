@@ -1,7 +1,14 @@
 /** 接口请求：统一响应 { code, message, data }，code===0 返回 data */
+import { resolveAppServerBaseUrl } from './app/env'
+
 let BASE: string = import.meta.env.VITE_SERVER_BASEURL || '/api/v1'
 // #ifdef MP-WEIXIN
 BASE = import.meta.env.VITE_MP_SERVER_BASEURL || BASE
+// #endif
+// #ifdef APP-PLUS
+// 安卓 App 没有同源概念，必须显式配置服务端地址；生产环境强制 HTTPS
+// 用 MODE 判断生产：test 等联调模式下 NODE_ENV 仍为 production，不能用 PROD
+BASE = resolveAppServerBaseUrl(import.meta.env.VITE_APP_SERVER_BASEURL, import.meta.env.MODE === 'production', BASE)
 // #endif
 
 /**
@@ -124,9 +131,34 @@ export const http = {
 
 /**
  * 图片上传（multipart/form-data，字段名 file）：后端存数据库并返回 { url: '/uploads/xxx', size }。
- * 微信云托管 callContainer 模式暂不支持 multipart 直传，生产建议配置合法域名直连或改造为云存储中转。
+ * 云托管 callContainer 模式不支持 multipart 直传，改读文件转 base64 走 JSON 接口（/app/upload-base64）。
+ * silent：配合 retryWithBackoff 逐张自动重试时使用，重试期间的失败提示由调用方统一展示。
  */
-export function uploadImage(filePath: string): Promise<{ url: string, size: number }> {
+function readFileBase64(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // #ifdef MP-WEIXIN
+    uni.getFileSystemManager().readFile({
+      filePath,
+      encoding: 'base64',
+      success: r => resolve(r.data as string),
+      fail: () => reject(new ApiError(-1, 'network')),
+    })
+    return
+    // #endif
+    // #ifndef MP-WEIXIN
+    reject(new ApiError(-1, 'network'))
+    // #endif
+  })
+}
+
+export function uploadImage(filePath: string, opts: { silent?: boolean } = {}): Promise<{ url: string, size: number }> {
+  // #ifdef MP-WEIXIN
+  if (CLOUD_ENV && CLOUD_SERVICE) {
+    const name = filePath.split('/').pop() || 'photo.jpg'
+    return readFileBase64(filePath)
+      .then(dataBase64 => request<{ url: string, size: number }>('POST', '/app/upload-base64', { name, dataBase64 }, { loading: '上传中', silent: opts.silent }))
+  }
+  // #endif
   return new Promise((resolve, reject) => {
     uni.uploadFile({
       url: `${BASE}/app/upload`,
@@ -142,16 +174,19 @@ export function uploadImage(filePath: string): Promise<{ url: string, size: numb
             uni.removeStorageSync(TOKEN_KEY)
             uni.$emit('tire:auth-invalid', body?.message || '账号已被封禁')
           }
-          uni.showToast({ title: body?.message || '上传失败', icon: 'none' })
+          if (!opts.silent)
+            uni.showToast({ title: body?.message || '上传失败', icon: 'none' })
           reject(new ApiError(body?.code ?? -1, body?.message || '上传失败'))
         }
         catch (e) {
-          uni.showToast({ title: '上传失败', icon: 'none' })
+          if (!opts.silent)
+            uni.showToast({ title: '上传失败', icon: 'none' })
           reject(new ApiError(-1, 'parse'))
         }
       },
       fail: () => {
-        uni.showToast({ title: '上传失败', icon: 'none' })
+        if (!opts.silent)
+          uni.showToast({ title: '上传失败', icon: 'none' })
         reject(new ApiError(-1, 'network'))
       },
     })

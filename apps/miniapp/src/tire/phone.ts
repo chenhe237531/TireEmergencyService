@@ -44,6 +44,17 @@ export function usePhoneBind(options: PhoneBindOptions = {}) {
     await options.onBound?.()
   }
 
+  /**
+   * 绑定触发账号合并（ADR-0002）时，服务端会换发主账号令牌：
+   * 必须先替换本地令牌再刷新 me，否则旧令牌指向已合并账号，下一次请求即 40001。
+   */
+  async function bind(body: { phone?: string, wxPhoneCode?: string }) {
+    const res = await http.post<{ accessToken?: string }>('/app/auth/phone', body, { silent: true })
+    if (res?.accessToken)
+      tire.setToken(res.accessToken)
+    await finish()
+  }
+
   /** 演示环境手动输入绑定 */
   async function bindManual() {
     if (!demoLogin.value) {
@@ -60,8 +71,7 @@ export function usePhoneBind(options: PhoneBindOptions = {}) {
     phoneLoading.value = true
     phoneErr.value = ''
     try {
-      await http.post('/app/auth/phone', { phone }, { silent: true })
-      await finish()
+      await bind({ phone })
     }
     catch (e) {
       phoneErr.value = errText(e, '绑定失败，请稍后重试')
@@ -83,8 +93,7 @@ export function usePhoneBind(options: PhoneBindOptions = {}) {
     phoneLoading.value = true
     phoneErr.value = ''
     try {
-      await http.post('/app/auth/phone', { wxPhoneCode: code }, { silent: true })
-      await finish()
+      await bind({ wxPhoneCode: code })
     }
     catch (err) {
       phoneErr.value = errText(err, '手机号验证失败，请稍后重试')

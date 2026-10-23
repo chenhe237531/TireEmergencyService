@@ -25,6 +25,8 @@ interface ImportMetaEnv {
   readonly VITE_MP_SERVER_BASEURL?: string
   /** 微信云托管环境 ID；与 VITE_WX_CLOUD_SERVICE 都配置时，小程序接口走 wx.cloud.callContainer */
   readonly VITE_WX_CLOUD_ENV?: string
+  /** 安卓 App（APP-PLUS）专用后台地址；生产环境必须为 HTTPS */
+  readonly VITE_APP_SERVER_BASEURL?: string
   /** 微信云托管服务名称（请求头 X-WX-SERVICE） */
   readonly VITE_WX_CLOUD_SERVICE?: string
   /** 云托管接口路径前缀，默认 /api/v1 */

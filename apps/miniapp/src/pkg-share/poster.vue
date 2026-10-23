@@ -2,12 +2,14 @@
 /**
  * 分享海报（pkg-share）
  *
- * 用 canvas 2d 的兼容写法（createCanvasContext）绘制，双端一致：
+ * 用 canvas 2d 的兼容写法（createCanvasContext）绘制，多端一致：
  *   品牌橙渐变头 → 邀请文案 → 客服二维码（无二维码降级为电话块）→ 底部说明。
  *
- * 双端差异：
+ * 平台差异（issue #9）：
  *   - MP-WEIXIN：保存 = canvasToTempFilePath → saveImageToPhotosAlbum（拒绝授权引导 openSetting）；
  *     分享 = 右上角胶囊 / open-type=share 按钮。
+ *   - APP-PLUS：保存 = canvasToTempFilePath → saveImageToPhotosAlbum（权限被拒引导系统设置，不循环弹窗）；
+ *     分享 = 系统分享面板分享 H5 链接（uni.share provider=system，文案与链接取后台设置）。
  *   - H5：生成后把 canvas 转成图片展示（浏览器里长按可保存），分享 = 复制邀请文案。
  */
 import { computed, getCurrentInstance, ref } from 'vue'
@@ -15,6 +17,10 @@ import { onLoad } from '@dcloudio/uni-app'
 import TButton from '@/components/tire/TButton.vue'
 import TState from '@/components/tire/TState.vue'
 import { http } from '@/tire/request'
+import { buildPosterContent, normalizeSettings } from '@/tire/app/settings'
+import { openAlbumPermissionSetting, saveImageToAlbum } from '@/tire/app/media'
+import type { AlbumSaveResult } from '@/tire/app/media'
+import { shareH5ToSystem } from '@/tire/app/share'
 import { absUrl, toast } from '@/tire/utils'
 import { useShare } from './useShare'
 
@@ -36,8 +42,10 @@ const drawError = ref('')
 const previewSrc = ref('')
 const ready = ref(false)
 
-const shareText = computed(() => settings.value.shareTitle || '轮胎出问题，先找小蚂蚁')
-const phone = computed(() => settings.value.servicePhone || '')
+/** 海报 / 系统分享共用的内容（标题、链接、完整文案、客服电话）统一由 settings 模块组装 */
+const content = computed(() => buildPosterContent(normalizeSettings(settings.value)))
+const shareText = computed(() => content.value.title)
+const phone = computed(() => content.value.phone)
 const qrUrl = computed(() => (settings.value.wechatQr ? absUrl(settings.value.wechatQr) : ''))
 
 onLoad(() => {
@@ -269,41 +277,54 @@ function paint(ctx: LegacyCtx, qrPath: string) {
   ctx.setTextAlign('left')
 }
 
-/** 保存到相册：MP 走文件写入，H5 提示长按 */
-function save() {
+/** canvas 转临时图片路径（保存相册 / H5 预览共用） */
+function canvasToFile(): Promise<string> {
+  return new Promise((resolve, reject) => {
+    uni.canvasToTempFilePath({
+      canvasId: 'poster-canvas',
+      fileType: 'png',
+      success: r => resolve(r.tempFilePath),
+      fail: reject,
+    } as any, proxy)
+  })
+}
+
+/** 相册保存结果 → 用户提示：权限被拒不循环弹窗，只引导一次系统设置 */
+function handleAlbumResult(result: AlbumSaveResult) {
+  if (result === 'saved') {
+    toast('已保存到相册')
+    return
+  }
+  if (result === 'denied') {
+    uni.showModal({
+      title: '需要相册权限',
+      content: '保存海报需要允许访问相册，可在系统设置里开启。',
+      confirmText: '去设置',
+      success: (m) => {
+        if (m.confirm)
+          openAlbumPermissionSetting()
+      },
+    })
+    return
+  }
+  toast('保存失败，请重试')
+}
+
+/** 保存到相册：App / 小程序转临时文件后写入相册；H5 提示长按保存 */
+async function save() {
   if (!ready.value)
     return
-  // #ifdef MP-WEIXIN
-  uni.canvasToTempFilePath({
-    canvasId: 'poster-canvas',
-    fileType: 'png',
-    success: (r) => {
-      uni.saveImageToPhotosAlbum({
-        filePath: r.tempFilePath,
-        success: () => toast('已保存到相册'),
-        fail: (err) => {
-          if (/auth deny|auth denied|authorize/i.test(err.errMsg || '')) {
-            uni.showModal({
-              title: '需要相册权限',
-              content: '保存海报需要允许访问相册，可在设置里开启。',
-              confirmText: '去设置',
-              success: (m) => {
-                if (m.confirm)
-                  uni.openSetting({})
-              },
-            })
-          }
-          else {
-            toast('保存失败，请重试')
-          }
-        },
-      })
-    },
-    fail: () => toast('保存失败，请重试'),
-  } as Parameters<typeof uni.canvasToTempFilePath>[0], proxy)
+  // #ifdef APP-PLUS || MP-WEIXIN
+  try {
+    const filePath = await canvasToFile()
+    handleAlbumResult(await saveImageToAlbum(filePath))
+  }
+  catch {
+    toast('保存失败，请重试')
+  }
   return
   // #endif
-  // #ifndef MP-WEIXIN
+  // #ifndef APP-PLUS || MP-WEIXIN
   uni.showModal({
     title: '保存海报',
     content: '在图片上长按，选择「保存图片」即可存入相册。',
@@ -313,8 +334,35 @@ function save() {
   // #endif
 }
 
-/** 分享给好友：MP 引导右上角胶囊；H5 复制邀请文案 */
-function share() {
+/** 复制邀请文案（链接 + 说明，任何聊天工具都能识别） */
+function copyInvite() {
+  uni.setClipboardData({
+    data: content.value.message,
+    success: () => toast('邀请文案已复制'),
+  })
+}
+
+/**
+ * 分享给好友：
+ *   App 拉系统分享面板分享 H5 链接（拉起失败降级复制）；
+ *   小程序引导右上角胶囊（保留微信分享链路）；H5 复制邀请文案。
+ */
+async function share() {
+  // #ifdef APP-PLUS
+  const r = await shareH5ToSystem({
+    title: content.value.title,
+    href: content.value.href,
+    message: content.value.message,
+  })
+  if (r === 'shared') {
+    toast('已分享')
+    return
+  }
+  if (r === 'canceled')
+    return
+  copyInvite()
+  return
+  // #endif
   // #ifdef MP-WEIXIN
   uni.showModal({
     title: '分享给好友',
@@ -322,12 +370,10 @@ function share() {
     showCancel: false,
     confirmText: '知道了',
   })
+  return
   // #endif
-  // #ifndef MP-WEIXIN
-  uni.setClipboardData({
-    data: `${shareText.value}｜小蚂蚁轮胎救援 · 24 小时轮胎救援，就近安排门店上门服务。${phone.value ? ` 客服电话 ${phone.value}` : ''}`,
-    success: () => toast('邀请文案已复制'),
-  })
+  // #ifdef H5
+  copyInvite()
   // #endif
 }
 </script>
@@ -379,7 +425,12 @@ function share() {
           保存到相册
         </TButton>
         <TButton block type="soft" size="lg" icon="i-tabler-share" :disabled="!ready" @click="share">
+          <!-- #ifdef APP-PLUS -->
+          系统分享给好友
+          <!-- #endif -->
+          <!-- #ifndef APP-PLUS -->
           分享给微信好友
+          <!-- #endif -->
         </TButton>
       </view>
 

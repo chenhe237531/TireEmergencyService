@@ -88,7 +88,7 @@ function openPhoneSheet() {
   phoneSheet.value = true
 }
 
-/** 绑定成功后同步页面上的手机号展示 */
+/** 绑定成功后同步页面上的手机号展示（含账号合并换发令牌，由 TPhoneSheet/usePhoneBind 处理） */
 function onPhoneBound() {
   phone.value = tire.me?.phone || phone.value
 }

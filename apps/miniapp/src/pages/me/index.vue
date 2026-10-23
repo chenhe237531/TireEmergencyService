@@ -4,6 +4,7 @@
  *
  * 资料头 + 菜单 + 退出。游客也能看 FAQ / 客服 / 关于，
  * 涉及个人数据的入口（资料 / 海报）先引导登录。
+ * 司机身份（私人车主 / 车队 / 服务门店）未完善时持续展示高亮引导条，直到选完身份。
  */
 import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
@@ -31,6 +32,8 @@ const avatar = computed(() => {
 const nickname = computed(() => tire.me?.nickname || (tire.loggedIn ? '微信用户' : '未登录'))
 const roleName = computed(() => (tire.me?.role ? DRIVER_ROLE_NAMES[tire.me.role] || '已认证' : ''))
 const phoneText = computed(() => tire.me?.phone || '点击绑定')
+/** 司机身份未完善：资料已加载且 role 为空，持续展示引导条（issue #9） */
+const roleGuide = computed(() => tire.loggedIn && !!tire.me && !tire.me.role)
 
 /** 绑手机号弹层（演示输入 / 微信快捷验证由 TPhoneSheet 统一处理） */
 const phoneSheet = ref(false)
@@ -94,6 +97,15 @@ function onCallService() {
     return
   }
   go('/pkg-me/contact')
+}
+
+/** 账号注销入口：进入注销流程页（影响说明 + 短信二次验证，issue #10） */
+function onAccountDelete() {
+  if (!tire.loggedIn) {
+    toast('请先登录后再注销账号')
+    return
+  }
+  go('/pkg-me/account-delete')
 }
 
 function logout() {
@@ -207,6 +219,26 @@ function logout() {
         </view>
       </view>
 
+      <!-- 司机身份未完善：高亮引导，选完身份（私人车主/车队/服务门店）后自动消失 -->
+      <view v-if="roleGuide" class="t-card mt-3 role-guide" @click="openProfile">
+        <view class="flex items-center gap-3">
+          <view class="h-10 w-10 flex flex-shrink-0 items-center justify-center rounded-xl bg-[#E8721C] text-[20px] text-white">
+            <text class="i-tabler-user-cog" />
+          </view>
+          <view class="min-w-0 flex-1">
+            <view class="text-[15px] font-semibold">
+              完善司机身份
+            </view>
+            <view class="mt-0.5 text-[12px] text-[#8F8981]">
+              选择私人车主 / 车队 / 服务门店，平台才能安排合适的门店
+            </view>
+          </view>
+          <view class="role-guide__btn">
+            去完善
+          </view>
+        </view>
+      </view>
+
       <!-- 菜单 -->
       <view class="t-cell-group mt-3">
         <TCell title="个人资料" icon="i-tabler-id" @click="openProfile" />
@@ -215,6 +247,16 @@ function logout() {
         <TCell title="常见问题" icon="i-tabler-help-circle" @click="go('/pkg-me/faq')" />
         <TCell title="联系客服" icon="i-tabler-headset" :value="servicePhone || '电话 / 微信'" @click="go('/pkg-me/contact')" />
         <TCell title="关于我们" icon="i-tabler-info-circle" @click="go('/pkg-me/about')" />
+      </view>
+
+      <!-- 账号与安全 -->
+      <view class="mt-4 px-1">
+        <view class="t-section-title">
+          账号与安全
+        </view>
+      </view>
+      <view class="t-cell-group mt-2">
+        <TCell title="账号注销" icon="i-tabler-user-minus" @click="onAccountDelete" />
       </view>
 
       <!-- 服务承诺：给「为什么要留手机号」一个可信解释 -->
@@ -404,5 +446,23 @@ function logout() {
   margin-top: 2px;
   font-size: 14px;
   color: var(--brand);
+}
+
+/* 身份未完善引导：品牌橙描边卡片，吸引用户点进资料页完成选择 */
+.role-guide {
+  padding: 14px 16px;
+  border: 1px solid rgba(232, 114, 28, 0.35);
+  background: linear-gradient(135deg, #fff8f1, #ffffff);
+}
+
+.role-guide__btn {
+  flex-shrink: 0;
+  padding: 6px 14px;
+  border-radius: 999px;
+  font-size: 12px;
+  font-weight: 700;
+  color: #fff;
+  background: linear-gradient(135deg, var(--brand-bright), var(--brand));
+  box-shadow: 0 6px 12px -6px rgba(232, 114, 28, 0.7);
 }
 </style>

@@ -2,6 +2,9 @@
 /**
  * 通用按钮：把「默认 / 按下 / 加载 / 禁用」四种状态收在一处，
  * 页面只传 type / loading / disabled，不再各自写按钮样式。
+ *
+ * 根节点 @click.stop：按钮点击不冒泡到父容器（如可点击的记录卡片），
+ * 小程序端编译为 catchtap，H5 / App 端为 stopPropagation，三端行为一致。
  */
 const props = withDefaults(defineProps<{
   type?: 'primary' | 'rescue' | 'soft' | 'ghost' | 'text' | 'danger'
@@ -43,7 +46,7 @@ function onTap() {
       { 't-btn--block': block, 'is-loading': loading, 'is-disabled': disabled },
     ]"
     :hover-class="disabled || loading ? 'none' : ''"
-    @click="onTap"
+    @click.stop="onTap"
   >
     <view class="t-btn__label">
       <text v-if="icon" :class="icon" class="mr-1 text-[16px] leading-none" />

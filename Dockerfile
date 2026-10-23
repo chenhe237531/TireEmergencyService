@@ -58,5 +58,10 @@ COPY --from=build /src/apps/miniapp/dist/build/h5 /app/miniapp/dist/build/h5
 EXPOSE 80
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s --retries=3 \
   CMD node -e "fetch('http://127.0.0.1:'+(process.env.PORT||80)+'/api/v1/app/faqs').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
+
 # 启动：同步表结构（多实例时加锁串行）→ 空库写入演示数据 → 启动 API
-CMD ["sh", "-c", "node prisma/db.js init && exec node dist/main.js"]
+# 云托管会拦截容器内对 api.weixin.qq.com 的 HTTPS 并换发自签名证书（jscode2session / 手机号验证都走这里），
+# Node 不读系统证书库，必须用 NODE_EXTRA_CA_CERTS 信任平台注入的 /app/cert/certificate.crt，
+# 否则服务端调微信接口报 fetch failed、小程序登录提示网络错误。
+# 证书由平台的 postStart 钩子生成，启动时最多等 5 秒；非云托管环境没有该文件，跳过即可（Node 只在用它发 HTTPS 时才读取）。
+CMD ["sh", "-c", "i=0; while [ $i -lt 5 ] && [ ! -f /app/cert/certificate.crt ]; do i=$((i+1)); sleep 1; done; if [ -f /app/cert/certificate.crt ]; then export NODE_EXTRA_CA_CERTS=/app/cert/certificate.crt; fi; node prisma/db.js init && exec node dist/main.js"]

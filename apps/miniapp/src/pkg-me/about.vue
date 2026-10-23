@@ -4,6 +4,8 @@
  *
  * 三段内容用 tab 切换：平台简介 / 用户协议 / 隐私政策。
  * 支持 ?tab=agreement|privacy 直达（登录页的协议链接会带这个参数）。
+ * 后台配置了协议外链（userAgreementUrl / privacyPolicyUrl）时，点对应 tab 直接打开链接，
+ * 未配置则沿用内置文本；页面底部展示版本号与 App 备案号（issue #9，发布前填入真实备案号）。
  */
 import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
@@ -11,8 +13,10 @@ import TBrand from '@/components/tire/TBrand.vue'
 import TState from '@/components/tire/TState.vue'
 import TSkeleton from '@/components/tire/TSkeleton.vue'
 import { http } from '@/tire/request'
-import type { AppSettings, PageQuery } from '@/tire/types'
-import { errText } from '@/tire/utils'
+import { getAppVersion } from '@/tire/app/version'
+import { icpNumberText, normalizeSettings } from '@/tire/app/settings'
+import type { PageQuery } from '@/tire/types'
+import { errText, toast } from '@/tire/utils'
 
 type TabKey = 'about' | 'agreement' | 'privacy'
 
@@ -22,10 +26,25 @@ const TABS: { key: TabKey, name: string, field: string }[] = [
   { key: 'privacy', name: '隐私政策', field: 'privacyPolicy' },
 ]
 
-const settings = ref<Partial<AppSettings>>({})
+const rawSettings = ref<Record<string, any>>({})
+const settings = computed(() => normalizeSettings(rawSettings.value))
 const loading = ref(true)
 const errMsg = ref('')
 const tab = ref<TabKey>('about')
+
+/** 版本号：App 取打包配置，小程序取平台版本，均取不到用兜底 */
+const appVersion = getAppVersion()
+/** 备案号：后台未配置时展示占位文案 */
+const icpText = computed(() => icpNumberText(settings.value.icpNumber))
+
+/** 协议外链（tab 对应的 URL，未配置为空串，走内置文本） */
+function tabUrl(key: TabKey): string {
+  if (key === 'agreement')
+    return settings.value.userAgreementUrl
+  if (key === 'privacy')
+    return settings.value.privacyPolicyUrl
+  return ''
+}
 
 const current = computed(() => TABS.find(t => t.key === tab.value)!)
 const content = computed(() => settings.value[current.value.field] || '')
@@ -43,7 +62,7 @@ async function load() {
   loading.value = true
   errMsg.value = ''
   try {
-    settings.value = await http.get('/app/settings', undefined, { silent: true })
+    rawSettings.value = await http.get('/app/settings', undefined, { silent: true })
   }
   catch (e) {
     errMsg.value = errText(e, '内容没加载出来')
@@ -53,9 +72,33 @@ async function load() {
   }
 }
 
+/** 打开外部链接：App 用系统浏览器；H5 新开页；小程序无外链能力时复制链接 */
+function openExternal(url: string) {
+  // #ifdef APP-PLUS
+  plus.runtime.openURL(url)
+  return
+  // #endif
+  // #ifdef H5
+  window.open(url, '_blank')
+  return
+  // #endif
+  // #ifdef MP-WEIXIN
+  uni.setClipboardData({
+    data: url,
+    success: () => toast('链接已复制，请在浏览器打开'),
+  })
+  // #endif
+}
+
 function switchTab(key: TabKey) {
   if (tab.value === key)
     return
+  const url = tabUrl(key)
+  // 配置了协议外链：直接打开链接，不再切内置文本 tab
+  if (url) {
+    openExternal(url)
+    return
+  }
   tab.value = key
   uni.pageScrollTo({ scrollTop: 0, duration: 0 })
 }
@@ -67,7 +110,7 @@ function switchTab(key: TabKey) {
     <view class="about-hd">
       <TBrand size="lg" sub="24 小时轮胎救援 · 平台调度 · 线下服务" />
       <view class="mt-3 text-[12px] text-[#8F8981]">
-        版本 1.0.0
+        版本 {{ appVersion }}
       </view>
     </view>
 
@@ -117,6 +160,18 @@ function switchTab(key: TabKey) {
           <view v-for="(l, i) in lines" :key="i" class="about-line" :class="{ 'about-line--blank': !l.trim() }">
             {{ l }}
           </view>
+        </view>
+      </view>
+
+      <!-- 平台信息：版本号 / App 备案号（issue #9：备案号发布前由运营在后台填入） -->
+      <view class="t-card mt-3 px-4 py-1">
+        <view class="about-info__row">
+          <text class="about-info__label">版本号</text>
+          <text class="about-info__value">{{ appVersion }}</text>
+        </view>
+        <view class="about-info__row">
+          <text class="about-info__label">备案信息</text>
+          <text class="about-info__value" :class="{ 'about-info__value--ph': !settings.icpNumber }">{{ icpText }}</text>
         </view>
       </view>
 
@@ -197,5 +252,34 @@ function switchTab(key: TabKey) {
 /* 空行只留一点间距，避免协议里连续空行把页面拉太长 */
 .about-line--blank {
   height: 6px;
+}
+
+/* 平台信息行：左标签右值，与 t-card 内的排版一致 */
+.about-info__row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  font-size: 13px;
+}
+
+.about-info__row + .about-info__row {
+  border-top: 1px solid #eeeae3;
+}
+
+.about-info__label {
+  color: var(--ink-3);
+}
+
+.about-info__value {
+  text-align: right;
+  word-break: break-all;
+  color: var(--ink-2);
+}
+
+/* 备案号未配置时的占位文案弱化展示 */
+.about-info__value--ph {
+  color: #a8a199;
 }
 </style>

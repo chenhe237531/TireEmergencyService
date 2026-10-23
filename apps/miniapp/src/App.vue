@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { onLaunch, onShow } from '@dcloudio/uni-app'
+import { onHide, onLaunch, onShow } from '@dcloudio/uni-app'
 import { getCurrentInstance } from 'vue'
 import { navigateToInterceptor } from '@/router/interceptor'
 import { permission } from '@/router/permission'
+import { setRecordsAppVisible, setRecordsBackgroundPolling } from '@/tire/app/recordsPoll'
+import { setAppForeground } from '@/tire/app/notify'
 import { useTire } from '@/tire/store'
 
 // $router 是脚手架注入的属性，类型从 permission.install 的入参推导
@@ -16,9 +18,20 @@ onLaunch(() => {
   uni.$on('tire:auth-invalid', () => tire.logout())
 })
 onShow((options: { path?: string, query?: Record<string, string> } = {}) => {
+  // App 回前台：状态变化提示走前台 toast，轮询交还页面持有方
+  setAppForeground(true)
+  setRecordsAppVisible(true)
+  setRecordsBackgroundPolling(false)
   if (options?.path)
     navigateToInterceptor.invoke({ url: `/${options.path}`, query: options.query })
   else navigateToInterceptor.invoke({ url: '/' })
+})
+onHide(() => {
+  // App 退后台：标记非前台（状态变化转本地通知）并整体暂停前台轮询；
+  // App 端进程存活时由后台轮询接管（仅 APP-PLUS），H5 / 小程序随之停止
+  setAppForeground(false)
+  setRecordsAppVisible(false)
+  setRecordsBackgroundPolling(true)
 })
 </script>
 

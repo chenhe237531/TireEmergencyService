@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseIntPipe, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Ip, Param, ParseIntPipe, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { memoryStorage } from 'multer'
 import { FileInterceptor } from '@nestjs/platform-express/multer'
 import { createHash } from 'node:crypto'
@@ -8,6 +8,9 @@ import { RESCUE_VEHICLE_TYPES, TICKET_STATUS_NAMES } from '../common/ticket'
 import { saveUploadFile } from '../common/upload'
 import { distanceLabel, haversineKm, isValidPlateNo, pageArgs, pick } from '../common/util'
 import { demoLoginAllowed, getWxPhoneNumber, wxConfigured } from '../common/wx'
+import { mergeDrivers } from '../common/driver-merge'
+import { anonymizeDriver } from '../common/account-deletion'
+import { SMS_CODE_TTL_MS, SMS_IP_HOURLY_LIMIT, SMS_MAX_ATTEMPTS, SMS_PHONE_DAILY_LIMIT, SMS_RESEND_INTERVAL_MS, demoCode, generateCode, hashCode, sendCode, verifyCode } from '../common/sms'
 import { PrismaService } from '../common/prisma.service'
 
 /** 门店分类字典（与 schema.prisma Store.category 注释一致） */
@@ -30,6 +33,20 @@ export const DRIVER_ROLES: Record<string, string> = {
 const ACTIVE_RESCUE_STATUS = ['pending', 'contacting']
 const DUPLICATE_WINDOW_MS = 2 * 60 * 1000
 
+/**
+ * 客户端幂等键：8~64 位字母数字/UUID。
+ * 缺失或格式非法一律按旧客户端处理，继续走原有的 2 分钟窗口去重。
+ */
+function clientRequestId(v: unknown): string | null {
+  if (typeof v !== 'string') return null
+  const s = v.trim()
+  return /^[\w-]{8,64}$/.test(s) ? s : null
+}
+
+/** 幂等唯一索引冲突（并发提交时落败的一方改为读取原记录） */
+function isDuplicateKey(e: unknown): boolean {
+  return typeof e === 'object' && e !== null && (e as { code?: string }).code === 'P2002'
+}
 /** 微信 code2Session 返回结构（截取需要的字段） */
 interface WxSession { openid: string, unionid?: string }
 
@@ -77,8 +94,101 @@ export class AppAuthController {
   }
 
   /**
+   * 发送短信验证码：不泄露手机号是否注册。
+   * 频控：同手机号 60 秒 1 条、每天 5 条；同 IP 每小时 10 条。
+   * scene：login 登录 | delete 注销账号二次验证（ADR-0006）。
+   */
+  @Post('auth/sms/send')
+  async sendSms(@Body() body: { phone?: string, scene?: string }, @Ip() ip: string) {
+    const phone = String(body.phone || '').trim()
+    const scene = body.scene === 'delete' ? 'delete' : 'login'
+    if (!/^1[3-9]\d{9}$/.test(phone)) throw Err.bad('请输入正确的手机号')
+
+    const now = new Date()
+    const last = await this.prisma.smsCode.findFirst({
+      where: { phone, scene },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (last && now.getTime() - last.createdAt.getTime() < SMS_RESEND_INTERVAL_MS)
+      throw Err.tooMany('验证码发送太频繁，请 60 秒后再试')
+
+    const dayStart = new Date(now)
+    dayStart.setHours(0, 0, 0, 0)
+    const phoneCount = await this.prisma.smsCode.count({ where: { phone, scene, createdAt: { gte: dayStart } } })
+    if (phoneCount >= SMS_PHONE_DAILY_LIMIT)
+      throw Err.tooMany('该手机号今日验证码次数已达上限，请明天再试')
+
+    const ipCount = await this.prisma.smsCode.count({
+      where: { ip, createdAt: { gte: new Date(now.getTime() - 60 * 60 * 1000) } },
+    })
+    if (ipCount >= SMS_IP_HOURLY_LIMIT)
+      throw Err.tooMany('请求过于频繁，请稍后再试')
+
+    const code = generateCode()
+    await this.prisma.smsCode.create({
+      data: { phone, scene, codeHash: hashCode(phone, code), ip, expiresAt: new Date(now.getTime() + SMS_CODE_TTL_MS) },
+    })
+    await sendCode(phone, code)
+
+    return { sent: true, scene, expiresIn: Math.floor(SMS_CODE_TTL_MS / 1000), ...(demoCode() ? { demoCode: code } : {}) }
+  }
+
+  /**
+   * 校验并原子消费一条短信验证码：错误累加 attempts（5 次作废），成功置 consumedAt 禁止复用。
+   * 登录与注销共用同一套校验规则。
+   */
+  private async consumeSmsCode(phone: string, code: string, scene: string) {
+    const record = await this.prisma.smsCode.findFirst({
+      where: { phone, scene, consumedAt: null, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: 'desc' },
+    })
+    if (!record || record.attempts >= SMS_MAX_ATTEMPTS) throw Err.smsCodeInvalid()
+    if (!verifyCode(phone, code, record.codeHash)) {
+      await this.prisma.smsCode.update({ where: { id: record.id }, data: { attempts: { increment: 1 } } })
+      throw Err.smsCodeInvalid()
+    }
+    // 原子消费：并发重复提交同一验证码时只有一次能成功
+    const consumed = await this.prisma.smsCode.updateMany({
+      where: { id: record.id, consumedAt: null },
+      data: { consumedAt: new Date() },
+    })
+    if (consumed.count === 0) throw Err.smsCodeInvalid()
+  }
+
+  /**
+   * 手机号 + 验证码登录：新手机号自动创建司机账号，均不提示「未注册」。
+   * 令牌受众 app，30 天有效；返回 isNew 供端上做首登引导。
+   */
+  @Post('auth/sms/login')
+  async smsLogin(@Body() body: { phone?: string, code?: string }) {
+    const phone = String(body.phone || '').trim()
+    const code = String(body.code || '').trim()
+    if (!/^1[3-9]\d{9}$/.test(phone)) throw Err.bad('请输入正确的手机号')
+    if (!/^\d{6}$/.test(code)) throw Err.bad('请输入 6 位验证码')
+
+    await this.consumeSmsCode(phone, code, 'login')
+
+    let driver = await this.prisma.driver.findFirst({ where: { phone } })
+    const isNew = !driver
+    if (driver) {
+      if (driver.status !== 'active') throw new BizError(40003, '账号已被封禁，请联系平台客服')
+      driver = await this.prisma.driver.update({ where: { id: driver.id }, data: { lastLoginAt: new Date() } })
+    }
+    else {
+      driver = await this.prisma.driver.create({ data: { phone, nickname: '司机用户' } })
+    }
+    return {
+      accessToken: signToken({ id: driver.id }, 'app'),
+      user: this.view(driver),
+      isNew,
+    }
+  }
+
+  /**
    * 绑定手机号：真实微信环境走 wxPhoneCode（getPhoneNumber 快速验证）；
    * 演示环境允许直接传手机号，便于 H5 / 本地联调。
+   * 手机号已属于另一司机时按 ADR-0002 合并：保留创建时间更早者为主账号，
+   * 当前登录的司机若被合并走，返回换发的新令牌（端上必须替换，否则下次请求 40001）。
    */
   @Post('auth/phone')
   @Aud('app')
@@ -95,12 +205,51 @@ export class AppAuthController {
     else {
       throw new BizError(40020, '请使用微信手机号快捷验证')
     }
-    const driver = await this.prisma.driver.update({ where: { id: u.id }, data: { phone } })
-    return this.view(driver)
+
+    const existing = await this.prisma.driver.findFirst({ where: { phone }, select: { id: true } })
+    if (existing && existing.id !== u.id) {
+      const { primaryId } = await mergeDrivers(this.prisma, { aId: u.id, bId: existing.id, phone, reason: 'wx-bind-merge' })
+      const primary = await this.prisma.driver.findUniqueOrThrow({ where: { id: primaryId } })
+      return {
+        ...this.view(primary),
+        merged: true,
+        // 当前登录的司机被合并走时换发主账号令牌；主账号就是当前司机则令牌不变
+        ...(primaryId !== u.id ? { accessToken: signToken({ id: primaryId }, 'app') } : {}),
+      }
+    }
+
+    try {
+      const driver = await this.prisma.driver.update({ where: { id: u.id }, data: { phone } })
+      return this.view(driver)
+    }
+    catch (e: any) {
+      // 并发绑定同一手机号撞唯一约束：提示重试，不暴露对方账号信息
+      if (e?.code === 'P2002') throw Err.conflict('该手机号刚被其他账号绑定，请刷新后重试')
+      throw e
+    }
   }
 
-  private view(d: { id: number, nickname: string, avatarUrl: string, phone: string, role: string }) {
+  private view(d: { id: number, nickname: string, avatarUrl: string, phone: string | null, role: string }) {
     return { id: d.id, nickname: d.nickname, avatarUrl: d.avatarUrl, phone: d.phone, role: d.role, roleEmpty: !d.role }
+  }
+
+  /**
+   * 注销账号（ADR-0006）：需先绑定手机号并用 scene=delete 的短信验证码二次验证
+   * （登录验证码不可复用），验证通过后匿名化司机资料并清理关联数据。
+   * 注销后同一手机号可重新注册，历史工单保留统计骨架但不关联新账号。
+   */
+  @Delete('account')
+  @Aud('app')
+  async deleteAccount(@CurrentUser() u: DriverUser, @Body() body: { code?: string }) {
+    const code = String(body.code || '').trim()
+    if (!/^\d{6}$/.test(code)) throw Err.bad('请输入 6 位验证码')
+    const driver = await this.prisma.driver.findUnique({ where: { id: u.id } })
+    if (!driver || driver.status !== 'active') throw Err.unauth()
+    if (!driver.phone) throw Err.needPhone()
+    // 二次验证用独立 scene，登录验证码不能用于注销
+    await this.consumeSmsCode(driver.phone, code, 'delete')
+    await anonymizeDriver(this.prisma, driver.id)
+    return { deleted: true }
   }
 }
 
@@ -181,7 +330,7 @@ export class AppController {
   @Post('rescue-alert')
   async rescueAlert(
     @CurrentUser() u: DriverUser,
-    @Body() body: { vehicleType?: string, plateNo?: string, lat?: number, lng?: number, locationDesc?: string },
+    @Body() body: { vehicleType?: string, plateNo?: string, lat?: number, lng?: number, locationDesc?: string, clientRequestId?: string },
   ) {
     const d = await this.prisma.driver.findUnique({ where: { id: u.id } })
     if (!d) throw Err.unauth()
@@ -200,29 +349,103 @@ export class AppController {
     // 至少要有位置描述或坐标，否则后台只拿到一个手机号，无法派单
     if (!locationDesc && (lat == null || lng == null)) throw Err.bad('请补充当前位置描述')
 
-    // 防止连点 / 重复提交：同一司机 2 分钟内已有进行中的求助时不再新建
-    const recent = await this.prisma.rescueAlert.findFirst({
-      where: {
-        driverId: u.id,
-        status: { in: ACTIVE_RESCUE_STATUS },
-        createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
-      },
-      orderBy: { id: 'desc' },
-      select: { id: true },
-    })
-    if (recent) throw new BizError(40900, '刚刚已提交过求助，请勿重复操作', { id: recent.id })
+    const requestId = clientRequestId(body.clientRequestId)
+    if (requestId) {
+      // 带幂等键：同司机同键直接返回原工单，不受 2 分钟窗口影响（弱网重试可能隔得更久）
+      const existing = await this.prisma.rescueAlert.findFirst({
+        where: { driverId: u.id, clientRequestId: requestId },
+        select: { id: true, status: true, createdAt: true },
+      })
+      if (existing) return existing
+    }
+    else {
+      // 旧客户端没有幂等键：保留同一司机 2 分钟内已有进行中求助时不新建的保护
+      const recent = await this.prisma.rescueAlert.findFirst({
+        where: {
+          driverId: u.id,
+          status: { in: ACTIVE_RESCUE_STATUS },
+          createdAt: { gte: new Date(Date.now() - DUPLICATE_WINDOW_MS) },
+        },
+        orderBy: { id: 'desc' },
+        select: { id: true },
+      })
+      if (recent) throw new BizError(40900, '刚刚已提交过求助，请勿重复操作', { id: recent.id })
+    }
 
-    const row = await this.prisma.rescueAlert.create({
-      data: {
-        driverId: u.id,
-        vehicleType,
-        plateNo,
-        lat,
-        lng,
-        locationDesc,
-      },
-    })
-    return { id: row.id, status: row.status, createdAt: row.createdAt }
+    try {
+      const row = await this.prisma.rescueAlert.create({
+        data: {
+          driverId: u.id,
+          vehicleType,
+          plateNo,
+          lat,
+          lng,
+          locationDesc,
+          clientRequestId: requestId,
+        },
+      })
+      return { id: row.id, status: row.status, createdAt: row.createdAt }
+    }
+    catch (e) {
+      // 并发重试同时到达：唯一索引只放行一条，落败方读回原工单
+      if (requestId && isDuplicateKey(e)) {
+        const existing = await this.prisma.rescueAlert.findFirst({
+          where: { driverId: u.id, clientRequestId: requestId },
+          select: { id: true, status: true, createdAt: true },
+        })
+        if (existing) return existing
+      }
+      throw e
+    }
+  }
+
+  /** 救援记录司机可见视图：列表与详情共用，保证两处字段完全一致 */
+  private rescueView(r: {
+    id: number, vehicleType: string, plateNo: string, lat: number | null, lng: number | null,
+    locationDesc: string, status: string, createdAt: Date, updatedAt: Date,
+    assignedStore: { id: number, name: string, category: string, areaLabel: string } | null,
+  }) {
+    return {
+      id: r.id,
+      vehicleType: r.vehicleType,
+      vehicleTypeName: RESCUE_VEHICLE_TYPES[r.vehicleType] || '其他',
+      plateNo: r.plateNo,
+      lat: r.lat,
+      lng: r.lng,
+      locationDesc: r.locationDesc,
+      status: r.status,
+      statusName: TICKET_STATUS_NAMES[r.status] || r.status,
+      assignedStore: r.assignedStore ? {
+        id: r.assignedStore.id,
+        name: r.assignedStore.name,
+        category: r.assignedStore.category,
+        categoryName: STORE_CATEGORIES[r.assignedStore.category] || r.assignedStore.category,
+        areaLabel: r.assignedStore.areaLabel,
+      } : null,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    }
+  }
+
+  /** 咨询记录司机可见视图：列表与详情共用 */
+  private consultView(r: {
+    id: number, plateNo: string, carModel: string, lat: number | null, lng: number | null,
+    locationDesc: string, description: string, images: unknown, status: string, createdAt: Date, updatedAt: Date,
+  }) {
+    return {
+      id: r.id,
+      plateNo: r.plateNo,
+      carModel: r.carModel,
+      lat: r.lat,
+      lng: r.lng,
+      locationDesc: r.locationDesc,
+      description: r.description,
+      images: Array.isArray(r.images) ? r.images : [],
+      status: r.status,
+      statusName: TICKET_STATUS_NAMES[r.status] || r.status,
+      createdAt: r.createdAt,
+      updatedAt: r.updatedAt,
+    }
   }
 
   /** 我的救援记录：只返回本人数据，不暴露内部备注 */
@@ -241,30 +464,22 @@ export class AppController {
       }),
     ])
     return {
-      list: list.map(r => ({
-        id: r.id,
-        vehicleType: r.vehicleType,
-        vehicleTypeName: RESCUE_VEHICLE_TYPES[r.vehicleType] || '其他',
-        plateNo: r.plateNo,
-        lat: r.lat,
-        lng: r.lng,
-        locationDesc: r.locationDesc,
-        status: r.status,
-        statusName: TICKET_STATUS_NAMES[r.status] || r.status,
-        assignedStore: r.assignedStore ? {
-          id: r.assignedStore.id,
-          name: r.assignedStore.name,
-          category: r.assignedStore.category,
-          categoryName: STORE_CATEGORIES[r.assignedStore.category] || r.assignedStore.category,
-          areaLabel: r.assignedStore.areaLabel,
-        } : null,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      })),
+      list: list.map(r => this.rescueView(r)),
       total,
       page,
       pageSize,
     }
+  }
+
+  /** 救援工单详情：仅本人可见，字段与列表同源（记录详情页 / 通知点击直达） */
+  @Get('rescue-alerts/:id')
+  async rescueDetail(@CurrentUser() u: DriverUser, @Param('id', ParseIntPipe) id: number) {
+    const r = await this.prisma.rescueAlert.findFirst({
+      where: { id, driverId: u.id },
+      include: { assignedStore: { select: { id: true, name: true, category: true, areaLabel: true } } },
+    })
+    if (!r) throw Err.notFound('求助记录不存在')
+    return this.rescueView(r)
   }
 
   /** 司机取消求助：仅待处理 / 跟进中可取消，取消后后台可见操作流水 */
@@ -304,24 +519,19 @@ export class AppController {
       this.prisma.consultRequest.findMany({ where, orderBy: { id: 'desc' }, skip, take }),
     ])
     return {
-      list: list.map(r => ({
-        id: r.id,
-        plateNo: r.plateNo,
-        carModel: r.carModel,
-        lat: r.lat,
-        lng: r.lng,
-        locationDesc: r.locationDesc,
-        description: r.description,
-        images: r.images || [],
-        status: r.status,
-        statusName: TICKET_STATUS_NAMES[r.status] || r.status,
-        createdAt: r.createdAt,
-        updatedAt: r.updatedAt,
-      })),
+      list: list.map(r => this.consultView(r)),
       total,
       page,
       pageSize,
     }
+  }
+
+  /** 咨询记录详情：仅本人可见，字段与列表同源 */
+  @Get('consults/:id')
+  async consultDetail(@CurrentUser() u: DriverUser, @Param('id', ParseIntPipe) id: number) {
+    const r = await this.prisma.consultRequest.findFirst({ where: { id, driverId: u.id } })
+    if (!r) throw Err.notFound('咨询记录不存在')
+    return this.consultView(r)
   }
 
   /** 服务咨询表单：游客可提交（自带联系方式），登录则关联司机 */
@@ -331,7 +541,7 @@ export class AppController {
     @CurrentUser() u: DriverUser | undefined,
     @Body() body: {
       plateNo?: string, carModel?: string, lat?: number, lng?: number, locationDesc?: string,
-      description?: string, images?: string[], contactName?: string, contactPhone?: string,
+      description?: string, images?: string[], contactName?: string, contactPhone?: string, clientRequestId?: string,
     },
   ) {
     if (!body.contactName?.trim()) throw Err.bad('请填写姓名')
@@ -339,24 +549,71 @@ export class AppController {
     if (!body.description?.trim()) throw Err.bad('请描述故障情况')
     if (!isValidPlateNo((body.plateNo || '').trim().slice(0, 20))) throw Err.bad('车牌号格式不对，如 豫A8K2F6 / 豫AD12345（新能源）')
     const images = Array.isArray(body.images) ? body.images.filter(i => typeof i === 'string' && i.startsWith('/uploads/')).slice(0, 9) : []
-    const row = await this.prisma.consultRequest.create({
-      data: {
-        driverId: u?.id ?? null,
-        plateNo: (body.plateNo || '').trim().slice(0, 20),
-        carModel: (body.carModel || '').trim().slice(0, 50),
-        lat: body.lat ?? null,
-        lng: body.lng ?? null,
-        locationDesc: (body.locationDesc || '').trim().slice(0, 200),
-        description: body.description.trim().slice(0, 1000),
-        images,
-        contactName: body.contactName.trim().slice(0, 30),
-        contactPhone: body.contactPhone!.trim(),
-      },
-    })
-    return { id: row.id, status: row.status }
+    const requestId = clientRequestId(body.clientRequestId)
+    const driverId = u?.id ?? null
+    // 游客没有司机标识，幂等键不生效（游客可多次替不同人咨询）
+    if (driverId && requestId) {
+      const existing = await this.prisma.consultRequest.findFirst({
+        where: { driverId, clientRequestId: requestId },
+        select: { id: true, status: true },
+      })
+      if (existing) return existing
+    }
+    try {
+      const row = await this.prisma.consultRequest.create({
+        data: {
+          driverId,
+          plateNo: (body.plateNo || '').trim().slice(0, 20),
+          carModel: (body.carModel || '').trim().slice(0, 50),
+          lat: body.lat ?? null,
+          lng: body.lng ?? null,
+          locationDesc: (body.locationDesc || '').trim().slice(0, 200),
+          description: body.description.trim().slice(0, 1000),
+          images,
+          contactName: body.contactName.trim().slice(0, 30),
+          contactPhone: body.contactPhone!.trim(),
+          clientRequestId: driverId ? requestId : null,
+        },
+      })
+      return { id: row.id, status: row.status }
+    }
+    catch (e) {
+      if (driverId && requestId && isDuplicateKey(e)) {
+        const existing = await this.prisma.consultRequest.findFirst({
+          where: { driverId, clientRequestId: requestId },
+          select: { id: true, status: true },
+        })
+        if (existing) return existing
+      }
+      throw e
+    }
   }
 
-  /** 平台设置：客服电话 / 二维码 / 关于我们 / 协议 / 分享文案；demoLogin 供端上决定手机号授权方式 */
+  /**
+   * 咨询记录补传照片：文字提交不等待所有图片成功，失败照片由端上本地留存，
+   * 后续重试上传成功后调用该接口合并到原记录（去重，与提交时一样最多 9 张）。
+   */
+  @Post('consults/:id/images')
+  async consultImages(
+    @CurrentUser() u: DriverUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { images?: string[] },
+  ) {
+    const row = await this.prisma.consultRequest.findFirst({ where: { id, driverId: u.id } })
+    if (!row) throw Err.notFound('咨询记录不存在')
+    const add = Array.isArray(body.images) ? body.images.filter(i => typeof i === 'string' && i.startsWith('/uploads/')) : []
+    // images 为 Json 字段：先收敛成 string[] 再合并去重
+    const current = Array.isArray(row.images) ? row.images.filter((i): i is string => typeof i === 'string') : []
+    const images = [...new Set([...current, ...add])]
+    if (images.length > 9) throw Err.bad('现场照片最多 9 张')
+    await this.prisma.consultRequest.update({ where: { id }, data: { images } })
+    return { id, images }
+  }
+
+  /**
+   * 平台设置：客服电话 / 二维码 / 关于我们 / 协议 / 分享文案；demoLogin 供端上决定手机号授权方式。
+   * 可选字段（icpNumber / userAgreementUrl / privacyPolicyUrl / h5Url）后台未配置时返回空串，端上按占位处理。
+   */
   @Get('settings')
   @OptionalAuth()
   async settings() {
@@ -369,6 +626,13 @@ export class AppController {
       userAgreement: map.userAgreement || '',
       privacyPolicy: map.privacyPolicy || '',
       shareTitle: map.shareTitle || '小蚂蚁轮胎救援',
+      // App 备案号：关于页展示，发布前由运营填入
+      icpNumber: map.icpNumber || '',
+      // 协议外链：配置后「关于」页的《用户协议》《隐私政策》直接打开 URL，未配置沿用内置文本
+      userAgreementUrl: map.userAgreementUrl || '',
+      privacyPolicyUrl: map.privacyPolicyUrl || '',
+      // H5 站点地址：安卓系统分享面板分享的落地链接
+      h5Url: map.h5Url || '',
       demoLogin: demoLoginAllowed(),
     }
   }
@@ -385,6 +649,29 @@ export class AppController {
   @OptionalAuth()
   @UseInterceptors(FileInterceptor('file', { storage: memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } }))
   async upload(@CurrentUser() u: DriverUser | undefined, @UploadedFile() file: Express.Multer.File) {
+    return saveUploadFile(this.prisma, file, u?.id ? `driver#${u.id}` : 'anonymous')
+  }
+
+  /**
+   * 图片上传（base64 JSON）：微信云托管 callContainer 不支持 multipart 直传，
+   * 小程序切到 callContainer 模式后走这个通道（普通浏览器 / H5 仍走上面的 multipart）。
+   */
+  @Post('upload-base64')
+  @OptionalAuth()
+  async uploadBase64(@CurrentUser() u: DriverUser | undefined, @Body() body: { name?: string, dataBase64: string }) {
+    const b64 = String(body?.dataBase64 || '').replace(/^data:image\/[\w.+-]+;base64,/, '')
+    if (!b64) throw new BizError(40020, '请选择要上传的图片')
+    const buffer = Buffer.from(b64, 'base64')
+    if (!buffer.length) throw new BizError(40020, '图片数据不合法')
+    const name = (body.name || 'photo.jpg').slice(0, 100)
+    const extToMime: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }
+    const ext = (name.split('.').pop() || '').toLowerCase()
+    const file = {
+      originalname: name,
+      mimetype: extToMime[ext] || 'image/jpeg',
+      size: buffer.length,
+      buffer,
+    } as Express.Multer.File
     return saveUploadFile(this.prisma, file, u?.id ? `driver#${u.id}` : 'anonymous')
   }
 }
