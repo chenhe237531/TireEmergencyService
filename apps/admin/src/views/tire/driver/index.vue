@@ -308,10 +308,10 @@ onActivated(() => {
         <el-table-column label="状态" width="90" align="center">
           <template #default="{ row }">
             <el-tag
-              :type="row.status === 'blocked' ? 'danger' : 'success'"
+              :type="row.status === 'blocked' ? 'danger' : row.status === 'merged' ? 'info' : 'success'"
               effect="light"
             >
-              {{ row.statusName || (row.status === "blocked" ? "已封禁" : "正常") }}
+              {{ row.statusName || (row.status === "blocked" ? "已封禁" : row.status === "merged" ? "已合并" : "正常") }}
             </el-tag>
           </template>
         </el-table-column>
@@ -339,7 +339,7 @@ onActivated(() => {
               查看痕迹
             </el-button>
             <el-button
-              v-if="canBan"
+              v-if="canBan && row.status !== 'merged'"
               link
               :type="row.status === 'blocked' ? 'success' : 'danger'"
               :loading="statusLoadingId === row.id"
