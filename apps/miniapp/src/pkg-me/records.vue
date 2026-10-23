@@ -11,7 +11,7 @@ import TButton from '@/components/tire/TButton.vue'
 import TState from '@/components/tire/TState.vue'
 import TSkeleton from '@/components/tire/TSkeleton.vue'
 import { http } from '@/tire/request'
-import { go, toast } from '@/tire/utils'
+import { errText, go, toast } from '@/tire/utils'
 
 interface RescueRecord {
   id: number
@@ -77,9 +77,9 @@ async function load(opts: { silent?: boolean } = {}) {
     rescues.value = r?.list || []
     consults.value = c?.list || []
   }
-  catch (e: any) {
+  catch (e) {
     if (!opts.silent)
-      errMsg.value = e?.message || '记录没加载出来'
+      errMsg.value = errText(e, '记录没加载出来')
   }
   finally {
     loading.value = false
@@ -119,8 +119,8 @@ async function cancelRescue(row: RescueRecord) {
     row.statusName = '已取消'
     toast('已取消，客服将不再派单')
   }
-  catch (e: any) {
-    toast(e?.message || '取消失败，请稍后重试')
+  catch (e) {
+    toast(errText(e, '取消失败，请稍后重试'))
     await load({ silent: true })
   }
   finally {

@@ -11,7 +11,7 @@ import TButton from '@/components/tire/TButton.vue'
 import TState from '@/components/tire/TState.vue'
 import TSkeleton from '@/components/tire/TSkeleton.vue'
 import { http } from '@/tire/request'
-import { go } from '@/tire/utils'
+import { errText, go } from '@/tire/utils'
 
 interface Faq { id: number, question: string, answer: string }
 
@@ -30,8 +30,8 @@ async function load() {
     faqs.value = Array.isArray(list) ? list : []
     activeId.value = faqs.value[0]?.id ?? null
   }
-  catch (e: any) {
-    errMsg.value = e?.message || '内容没加载出来'
+  catch (e) {
+    errMsg.value = errText(e, '内容没加载出来')
   }
   finally {
     loading.value = false

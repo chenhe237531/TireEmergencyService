@@ -3,15 +3,33 @@
 const TAB_PAGES = ['/pages/index/index', '/pages/consult/index', '/pages/me/index']
 
 export function go(url?: string | null) {
-  if (!url) return
+  if (!url)
+    return
   const path = url.split('?')[0]
-  if (TAB_PAGES.includes(path)) uni.switchTab({ url: path })
+  if (TAB_PAGES.includes(path))
+    uni.switchTab({ url: path })
   else uni.navigateTo({ url, fail: () => uni.redirectTo({ url }) })
 }
 
 export function back(fallback = '/pages/index/index') {
-  if (getCurrentPages().length > 1) uni.navigateBack()
+  if (getCurrentPages().length > 1)
+    uni.navigateBack()
   else go(fallback)
+}
+
+/** 请求错误 → 提示文案：网络类错误统一用 fallback，业务错误用后端 message */
+export function errText(e: unknown, fallback = '操作失败，请稍后重试'): string {
+  const msg = e instanceof Error ? e.message : ''
+  return msg && msg !== 'network' ? msg : fallback
+}
+
+/** 请求错误码（非请求错误返回 undefined），用于分支处理 40001 / 40011 等 */
+export function errCode(e: unknown): number | undefined {
+  if (typeof e === 'object' && e !== null && 'code' in e) {
+    const code = (e as { code?: unknown }).code
+    return typeof code === 'number' ? code : undefined
+  }
+  return undefined
 }
 
 export function toast(title: string) {
@@ -26,7 +44,8 @@ export function confirm(title: string, content: string, confirmText = '确认'):
 
 /** 拨打电话（H5 与小程序通用） */
 export function call(phone: string) {
-  if (!phone) return
+  if (!phone)
+    return
   // #ifdef H5
   window.location.href = `tel:${phone}`
   // #endif
@@ -41,13 +60,25 @@ export function call(phone: string) {
  * H5 与服务端同源，相对路径直接可用。
  */
 export function absUrl(u?: string | null) {
-  if (!u || !u.startsWith('/')) return u || ''
+  if (!u || !u.startsWith('/'))
+    return u || ''
   // #ifdef MP-WEIXIN
   const base = (import.meta.env.VITE_MP_SERVER_BASEURL || import.meta.env.VITE_SERVER_BASEURL || '') as string
   const origin = base.match(/^https?:\/\/[^/]+/)?.[0]
-  if (origin) return origin + u
+  if (origin)
+    return origin + u
   // #endif
   return u
+}
+
+/**
+ * 中国大陆车牌（普通 5 位 / 新能源 6 位，可带挂/警/学后缀），与服务端校验保持一致；
+ * 空串视为未填（车牌为选填）。
+ */
+const PLATE_RE = /^[京津沪渝冀豫云辽黑湘皖鲁新苏浙赣鄂桂甘晋蒙陕吉闽贵粤青藏川宁琼][A-HJ-NP-Z][A-HJ-NP-Z0-9]{5,6}[挂警学]?$/
+
+export function isValidPlate(v: string): boolean {
+  return !v || PLATE_RE.test(v)
 }
 
 /**

@@ -8,7 +8,7 @@
  * 标题会取后台「分享标题」（/app/settings.shareTitle），拿不到时用默认文案。
  */
 import { ref } from 'vue'
-import { http } from './request'
+import { loadAppSettings } from './settings'
 
 export const DEFAULT_SHARE_TITLE = '小蚂蚁轮胎救援 · 24 小时轮胎救援一键呼叫'
 export const DEFAULT_SHARE_PATH = '/pages/index/index'
@@ -21,10 +21,9 @@ let loading: Promise<string> | null = null
 /** 拉取后台分享标题：失败静默降级为默认文案，不打扰用户 */
 export function loadShareTitle(): Promise<string> {
   if (!loading) {
-    loading = http
-      .get('/app/settings', undefined, { silent: true })
-      .then((s: any) => {
-        if (s?.shareTitle)
+    loading = loadAppSettings()
+      .then((s) => {
+        if (s.shareTitle)
           shareTitle.value = s.shareTitle
         return shareTitle.value
       })

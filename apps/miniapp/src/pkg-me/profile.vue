@@ -9,19 +9,16 @@ import { computed, ref } from 'vue'
 import { onLoad } from '@dcloudio/uni-app'
 import TButton from '@/components/tire/TButton.vue'
 import TField from '@/components/tire/TField.vue'
-import TSheet from '@/components/tire/TSheet.vue'
+import TPhoneSheet from '@/components/tire/TPhoneSheet.vue'
 import TState from '@/components/tire/TState.vue'
 import { http, uploadImage } from '@/tire/request'
-import { DRIVER_ROLE_NAMES, useTire } from '@/tire/store'
-import { absUrl, back, go, toast } from '@/tire/utils'
+import { DRIVER_ROLE_NAMES, DRIVER_ROLE_OPTIONS, useTire } from '@/tire/store'
+import { absUrl, back, errCode, errText, go, toast } from '@/tire/utils'
 
 const tire = useTire()
 
-const ROLES = [
-  { value: 'private_owner', label: '私人车主', desc: '小车 / 私家车为主', icon: 'i-tabler-car' },
-  { value: 'fleet', label: '车队', desc: '多车统一调度', icon: 'i-tabler-truck' },
-  { value: 'store', label: '服务门店', desc: '接收平台派单', icon: 'i-tabler-building-store' },
-]
+/** 身份选项与文案统一取自全局字典，登录页与这里保持一致 */
+const ROLES = DRIVER_ROLE_OPTIONS
 
 const loading = ref(true)
 const saving = ref(false)
@@ -36,37 +33,21 @@ const phone = ref('')
 const snapshot = ref('')
 
 const phoneSheet = ref(false)
-const phoneVal = ref('')
-const phoneErr = ref('')
-const phoneLoading = ref(false)
-const demoLogin = ref(true)
 
 const avatarSrc = computed(() => (avatarUrl.value ? absUrl(avatarUrl.value) : '/static/images/default-avatar.png'))
 const roleName = computed(() => (role.value ? DRIVER_ROLE_NAMES[role.value] || '未设置' : '未设置'))
 const dirty = computed(() => JSON.stringify([nickname.value.trim(), avatarUrl.value, role.value]) !== snapshot.value)
-
-async function loadDemoFlag() {
-  try {
-    const s = await http.get('/app/settings', undefined, { silent: true })
-    demoLogin.value = s?.demoLogin !== false
-  }
-  catch {
-    // 设置读取失败不影响资料编辑，手机号绑定会由后端再次校验
-  }
-}
 
 onLoad(async () => {
   if (!tire.loggedIn) {
     loading.value = false
     return
   }
-  loadDemoFlag()
-  await tire.loadMe()
-  const me = tire.me || {}
-  nickname.value = me.nickname || ''
-  avatarUrl.value = me.avatarUrl || ''
-  role.value = me.role || ''
-  phone.value = me.phone || ''
+  const me = await tire.loadMe()
+  nickname.value = me?.nickname || ''
+  avatarUrl.value = me?.avatarUrl || ''
+  role.value = me?.role || ''
+  phone.value = me?.phone || ''
   snapshot.value = JSON.stringify([nickname.value.trim(), avatarUrl.value, role.value])
   loading.value = false
 })
@@ -104,66 +85,12 @@ function pickRole(v: string) {
 }
 
 function openPhoneSheet() {
-  phoneVal.value = phone.value
-  phoneErr.value = ''
   phoneSheet.value = true
 }
 
-async function finishBind(next: string) {
-  phone.value = next
-  await tire.loadMe()
-  phoneSheet.value = false
-  toast('手机号已更新')
-}
-
-async function bindPhone() {
-  if (!demoLogin.value) {
-    phoneErr.value = '请使用微信手机号快捷绑定'
-    return
-  }
-  const v = phoneVal.value.trim()
-  if (!/^1\d{10}$/.test(v)) {
-    phoneErr.value = '请输入 11 位手机号'
-    return
-  }
-  if (phoneLoading.value)
-    return
-  phoneLoading.value = true
-  phoneErr.value = ''
-  try {
-    await http.post('/app/auth/phone', { phone: v }, { silent: true })
-    await finishBind(v)
-  }
-  catch (e: any) {
-    phoneErr.value = e?.message || '更新失败，请稍后再试'
-  }
-  finally {
-    phoneLoading.value = false
-  }
-}
-
-/** 微信手机号快捷验证 */
-async function onWxPhone(e: any) {
-  const code = e?.detail?.code
-  if (!code) {
-    phoneErr.value = '未授权手机号，请重试'
-    return
-  }
-  if (phoneLoading.value)
-    return
-  phoneLoading.value = true
-  phoneErr.value = ''
-  try {
-    await http.post('/app/auth/phone', { wxPhoneCode: code }, { silent: true })
-    const me = await tire.loadMe()
-    await finishBind(me?.phone || phone.value)
-  }
-  catch (err: any) {
-    phoneErr.value = err?.message || '手机号验证失败，请稍后再试'
-  }
-  finally {
-    phoneLoading.value = false
-  }
+/** 绑定成功后同步页面上的手机号展示 */
+function onPhoneBound() {
+  phone.value = tire.me?.phone || phone.value
 }
 
 async function save() {
@@ -189,13 +116,13 @@ async function save() {
     toast('已保存')
     setTimeout(() => back('/pages/me/index'), 500)
   }
-  catch (e: any) {
-    if (e?.code === 40001) {
+  catch (e) {
+    if (errCode(e) === 40001) {
       toast('登录已过期，请重新登录')
       go('/pkg-auth/login')
     }
     else {
-      toast(e?.message || '保存失败，请稍后再试')
+      toast(errText(e, '保存失败，请稍后再试'))
     }
   }
   finally {
@@ -317,47 +244,12 @@ async function save() {
     </template>
 
     <!-- 手机号绑定 -->
-    <TSheet
+    <TPhoneSheet
       v-model:show="phoneSheet"
       :title="phone ? '更换手机号' : '绑定手机号'"
-      desc="请填写常用号码，客服联系不上会影响救援派单。"
-      confirm-text="保存"
-      :show-confirm="demoLogin"
-      :confirm-loading="phoneLoading"
-      @confirm="bindPhone"
-    >
-      <!-- #ifdef MP-WEIXIN -->
-      <view v-if="!demoLogin" class="t-field" style="border-bottom: none; padding-top: 0">
-        <button
-          class="t-btn t-btn--primary t-btn--lg t-btn--block"
-          style="border: none"
-          open-type="getPhoneNumber"
-          @getphonenumber="onWxPhone"
-        >
-          {{ phone ? '微信手机号快捷更换' : '微信手机号快捷绑定' }}
-        </button>
-        <view class="t-hint mt-2">
-          微信授权后自动绑定，无需手动输入
-        </view>
-      </view>
-      <!-- #endif -->
-
-      <view v-if="demoLogin" class="t-field" style="border-bottom: none; padding-top: 0">
-        <view class="t-field__hd">
-          <text class="t-label t-label--req">手机号</text>
-        </view>
-        <input v-model="phoneVal" class="t-input" :class="{ 'is-error': phoneErr }" type="number" :maxlength="11" placeholder="请输入 11 位手机号">
-        <view v-if="phoneErr" class="t-field__err">
-          <text class="i-tabler-alert-circle text-[13px]" />
-          <text>{{ phoneErr }}</text>
-        </view>
-      </view>
-      <!-- #ifndef MP-WEIXIN -->
-      <view v-if="!demoLogin" class="t-hint">
-        当前环境不支持微信手机号授权，请在小程序内完成绑定
-      </view>
-      <!-- #endif -->
-    </TSheet>
+      bound-toast="手机号已更新"
+      @bound="onPhoneBound"
+    />
   </view>
 </template>
 

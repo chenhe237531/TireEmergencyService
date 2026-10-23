@@ -10,12 +10,14 @@ import { onLoad, onPullDownRefresh, onShow, onUnload } from '@dcloudio/uni-app'
 import StoreCard from './components/StoreCard.vue'
 import TBrand from '@/components/tire/TBrand.vue'
 import TSheet from '@/components/tire/TSheet.vue'
+import TPhoneSheet from '@/components/tire/TPhoneSheet.vue'
 import TSkeleton from '@/components/tire/TSkeleton.vue'
 import TState from '@/components/tire/TState.vue'
 import { http } from '@/tire/request'
 import { useShare } from '@/tire/share'
 import { useTire } from '@/tire/store'
-import { call, go, toast } from '@/tire/utils'
+import type { AppSettings, Coords } from '@/tire/types'
+import { call, errCode, errText, go, isValidPlate, toast } from '@/tire/utils'
 
 interface StoreItem {
   id: number
@@ -37,10 +39,8 @@ useShare()
 /** 默认坐标：定位被拒时用它展示「默认城市」门店，避免整页空白 */
 const DEFAULT_POS = { lat: 34.75, lng: 113.76 }
 
-const settings = ref<Record<string, any>>({})
+const settings = ref<Partial<AppSettings>>({})
 const servicePhone = computed(() => settings.value.servicePhone || '')
-/** 演示登录环境允许手动输入手机号；真实微信环境用 getPhoneNumber 授权 */
-const demoLogin = computed(() => settings.value.demoLogin !== false)
 
 /** 分类：全部 + 后端 6 个分类，key 与 /app/stores 的 category 参数一致 */
 const CATEGORIES = [
@@ -61,7 +61,7 @@ const errorMsg = ref('')
 /** 定位状态：locating 定位中 / ok 已定位 / denied 未授权走默认坐标 / manual 手动填写 */
 const locState = ref<'locating' | 'ok' | 'denied' | 'manual'>('locating')
 const locLabel = ref('正在获取当前位置')
-const coords = ref<{ lat: number, lng: number } | null>(null)
+const coords = ref<Coords | null>(null)
 
 const locSheet = ref(false)
 const locDraft = ref('')
@@ -82,9 +82,6 @@ const VEHICLE_TYPES = [
 const RESCUE_TIPS = ['高速应急车道', '桥上 / 桥下', '服务区', '小区地库', '国道 / 省道边']
 
 const phoneSheet = ref(false)
-const phoneVal = ref('')
-const phoneErr = ref('')
-const phoneLoading = ref(false)
 /** 绑完手机号后自动继续提交救援 */
 const pendingRescue = ref(false)
 
@@ -180,9 +177,9 @@ async function loadStores(opts: { silent?: boolean } = {}) {
     loadedOnce = true
     reportViews()
   }
-  catch (e: any) {
+  catch (e) {
     if (!opts.silent)
-      errorMsg.value = e?.message || '门店没加载出来'
+      errorMsg.value = errText(e, '门店没加载出来')
   }
   finally {
     loading.value = false
@@ -261,6 +258,10 @@ async function submitRescue() {
     rescueErr.value = '请选择车型（大车 / 小车 / 其他）'
     return
   }
+  if (!isValidPlate(rescuePlate.value.trim())) {
+    rescueErr.value = '车牌号格式不对，如 豫A8K2F6 / 豫AD12345（新能源）'
+    return
+  }
   rescueLoading.value = true
   rescueErr.value = ''
   try {
@@ -284,16 +285,15 @@ async function submitRescue() {
       },
     })
   }
-  catch (e: any) {
-    if (e?.code === 40011) {
+  catch (e) {
+    const code = errCode(e)
+    if (code === 40011) {
       // 未绑手机号：先绑再自动重提，不让用户重新填一遍
       pendingRescue.value = true
       rescueSheet.value = false
-      phoneVal.value = tire.me?.phone || ''
-      phoneErr.value = ''
       phoneSheet.value = true
     }
-    else if (e?.code === 40900) {
+    else if (code === 40900) {
       // 2 分钟内重复提交：后端返回已有工单，直接引导查看
       rescueSheet.value = false
       uni.showModal({
@@ -308,11 +308,11 @@ async function submitRescue() {
         },
       })
     }
-    else if (e?.code === 40001 || e?.code === 40003) {
+    else if (code === 40001 || code === 40003) {
       rescueSheet.value = false
     }
     else {
-      rescueErr.value = e?.message || '提交失败，请稍后重试'
+      rescueErr.value = errText(e, '提交失败，请稍后重试')
     }
   }
   finally {
@@ -320,68 +320,13 @@ async function submitRescue() {
   }
 }
 
-async function finishBind() {
-  await tire.loadMe()
-  phoneSheet.value = false
-  toast('手机号已绑定')
-  if (pendingRescue.value) {
-    pendingRescue.value = false
-    rescueSheet.value = true
-    await submitRescue()
-  }
-}
-
-async function bindPhone() {
-  if (!demoLogin.value) {
-    phoneErr.value = '请使用微信手机号快捷绑定'
+/** 绑定成功：若因未绑手机号中断过救援，自动继续提交 */
+async function onPhoneBound() {
+  if (!pendingRescue.value)
     return
-  }
-  const phone = phoneVal.value.trim()
-  if (!/^1\d{10}$/.test(phone)) {
-    phoneErr.value = '请输入 11 位手机号'
-    return
-  }
-  if (phoneLoading.value)
-    return
-  phoneLoading.value = true
-  phoneErr.value = ''
-  try {
-    await http.post('/app/auth/phone', { phone }, { silent: true })
-    await finishBind()
-  }
-  catch (e: any) {
-    phoneErr.value = e?.message || '绑定失败，请稍后重试'
-  }
-  finally {
-    phoneLoading.value = false
-  }
-}
-
-/** 微信手机号快速验证（仅真实微信环境，演示模式不显示该入口） */
-async function onWxPhone(e: any) {
-  const code = e?.detail?.code
-  if (!code) {
-    phoneErr.value = '未授权手机号，请重试或手动输入'
-    return
-  }
-  if (phoneLoading.value)
-    return
-  phoneLoading.value = true
-  phoneErr.value = ''
-  try {
-    await http.post('/app/auth/phone', { wxPhoneCode: code }, { silent: true })
-    await finishBind()
-  }
-  catch (err: any) {
-    phoneErr.value = err?.message || '手机号验证失败，请稍后重试'
-  }
-  finally {
-    phoneLoading.value = false
-  }
-}
-
-function closePhoneSheet() {
   pendingRescue.value = false
+  rescueSheet.value = true
+  await submitRescue()
 }
 
 function onCall() {
@@ -605,51 +550,14 @@ function ensureLogin() {
     </TSheet>
 
     <!-- 未绑手机号：绑完自动继续提交 -->
-    <TSheet
+    <TPhoneSheet
       v-model:show="phoneSheet"
       title="绑定手机号"
       desc="救援需要电话联系你确认位置，绑定后立即发出这次求助。"
       confirm-text="绑定并呼救"
-      :show-confirm="demoLogin"
-      :confirm-loading="phoneLoading"
-      @confirm="bindPhone"
-      @cancel="closePhoneSheet"
-    >
-      <!-- #ifdef MP-WEIXIN -->
-      <view v-if="!demoLogin" class="t-field" style="border-bottom: none; padding-top: 0">
-        <button
-          class="t-btn t-btn--primary t-btn--lg t-btn--block"
-          style="border: none"
-          open-type="getPhoneNumber"
-          @getphonenumber="onWxPhone"
-        >
-          微信手机号快捷绑定
-        </button>
-        <view class="t-hint mt-2">
-          微信授权后自动绑定，无需手动输入
-        </view>
-      </view>
-      <!-- #endif -->
-
-      <view v-if="demoLogin" class="t-field" style="border-bottom: none; padding-top: 0">
-        <view class="t-field__hd">
-          <text class="t-label t-label--req">手机号</text>
-        </view>
-        <input v-model="phoneVal" class="t-input" :class="{ 'is-error': phoneErr }" type="number" :maxlength="11" placeholder="请输入 11 位手机号">
-        <view v-if="phoneErr" class="t-field__err">
-          <text class="i-tabler-alert-circle text-[13px]" />
-          <text>{{ phoneErr }}</text>
-        </view>
-        <view v-else class="t-hint mt-1">
-          仅用于本次救援联系，不会对外展示
-        </view>
-      </view>
-      <!-- #ifndef MP-WEIXIN -->
-      <view v-if="!demoLogin" class="t-hint">
-        当前环境不支持微信手机号授权，请在小程序内完成绑定
-      </view>
-      <!-- #endif -->
-    </TSheet>
+      @cancel="pendingRescue = false"
+      @bound="onPhoneBound"
+    />
   </view>
 </template>
 

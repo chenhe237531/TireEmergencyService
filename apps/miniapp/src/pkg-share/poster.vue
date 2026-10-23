@@ -22,7 +22,10 @@ import { useShare } from './useShare'
 const W = 640
 const H = 900
 
-const proxy = (getCurrentInstance() as any)?.proxy
+/** 旧版 canvas API 的上下文类型（createCanvasContext 返回值） */
+type LegacyCtx = ReturnType<typeof uni.createCanvasContext>
+
+const proxy = getCurrentInstance()?.proxy
 
 useShare({ title: '轮胎出问题，先找小蚂蚁 · 24 小时救援', path: '/pages/index/index' })
 
@@ -51,7 +54,7 @@ function measure(): Promise<{ w: number, h: number }> {
     uni.createSelectorQuery()
       .in(proxy)
       .select('#poster-canvas')
-      .boundingClientRect((rect: any) => {
+      .boundingClientRect((rect?: { width?: number, height?: number } | null) => {
         if (rect?.width)
           resolve({ w: rect.width, h: rect.height })
         else resolve({ w: W, h: H })
@@ -61,7 +64,7 @@ function measure(): Promise<{ w: number, h: number }> {
 }
 
 /** 圆角矩形路径（旧版 canvas API 没有 roundRect） */
-function roundRect(ctx: any, x: number, y: number, w: number, h: number, r: number) {
+function roundRect(ctx: LegacyCtx, x: number, y: number, w: number, h: number, r: number) {
   ctx.beginPath()
   ctx.moveTo(x + r, y)
   ctx.lineTo(x + w - r, y)
@@ -76,7 +79,7 @@ function roundRect(ctx: any, x: number, y: number, w: number, h: number, r: numb
 }
 
 /** 按宽度折行，最多 maxLines 行，超出用省略号 */
-function wrapText(ctx: any, text: string, maxWidth: number, maxLines: number): string[] {
+function wrapText(ctx: LegacyCtx, text: string, maxWidth: number, maxLines: number): string[] {
   const chars = Array.from(text || '')
   const lines: string[] = []
   let line = ''
@@ -143,7 +146,7 @@ async function build() {
           resolve()
         },
         fail: () => resolve(),
-      } as any, proxy)
+      } as Parameters<typeof uni.canvasToTempFilePath>[0], proxy)
     })
     // #endif
 
@@ -157,7 +160,7 @@ async function build() {
   }
 }
 
-function paint(ctx: any, qrPath: string) {
+function paint(ctx: LegacyCtx, qrPath: string) {
   // 底色
   ctx.setFillStyle('#F6F5F2')
   ctx.fillRect(0, 0, W, H)
@@ -297,7 +300,7 @@ function save() {
       })
     },
     fail: () => toast('保存失败，请重试'),
-  } as any, proxy)
+  } as Parameters<typeof uni.canvasToTempFilePath>[0], proxy)
   return
   // #endif
   // #ifndef MP-WEIXIN
