@@ -69,6 +69,8 @@ const locSheet = ref(false)
 const locDraft = ref('')
 const locLatDraft = ref('')
 const locLngDraft = ref('')
+/** 手填或地图选点得到的位置描述，再次打开位置弹层时回填，避免重复输入 */
+const lastLocDesc = ref('')
 
 const rescueSheet = ref(false)
 const rescueDesc = ref('')
@@ -126,6 +128,7 @@ async function loadSettings() {
 }
 
 /** 定位：先展示全部门店；5 秒无回调按未授权处理，避免首页永久停在「定位中」 */
+let locateGen = 0
 function locate() {
   // #ifdef APP-PLUS
   // 未同意隐私政策前不初始化高德定位 / 地图 SDK
@@ -136,11 +139,16 @@ function locate() {
     return
   }
   // #endif
-  if (locTimer)
+  if (locTimer) {
     clearTimeout(locTimer)
+    locTimer = null
+  }
+  // 代际计数：超时后迟到的成功/失败回调、或新一轮定位开始后，旧回调一律忽略
+  const gen = ++locateGen
   locState.value = 'locating'
   locLabel.value = '正在获取当前位置'
   locTimer = setTimeout(() => {
+    locTimer = null
     if (locState.value !== 'locating')
       return
     coords.value = null
@@ -151,6 +159,8 @@ function locate() {
   }, 5000)
   getCurrentLocation()
     .then((pos) => {
+      if (gen !== locateGen || locState.value !== 'locating')
+        return
       if (locTimer) {
         clearTimeout(locTimer)
         locTimer = null
@@ -161,6 +171,8 @@ function locate() {
       loadStores({ silent: true })
     })
     .catch(() => {
+      if (gen !== locateGen || locState.value !== 'locating')
+        return
       if (locTimer) {
         clearTimeout(locTimer)
         locTimer = null
@@ -229,7 +241,7 @@ function onStoreTap(s: StoreItem) {
 
 /** 手动填写位置：描述必填，经纬度可选 */
 function openLocSheet() {
-  locDraft.value = locState.value === 'manual' ? locLabel.value : ''
+  locDraft.value = lastLocDesc.value
   locLatDraft.value = coords.value ? String(coords.value.lat) : ''
   locLngDraft.value = coords.value ? String(coords.value.lng) : ''
   locSheet.value = true
@@ -243,9 +255,18 @@ function applyLoc() {
   }
   const lat = Number(locLatDraft.value)
   const lng = Number(locLngDraft.value)
-  const valid = locLatDraft.value && locLngDraft.value && !Number.isNaN(lat) && !Number.isNaN(lng)
+  const latFilled = locLatDraft.value.trim() !== ''
+  const lngFilled = locLngDraft.value.trim() !== ''
+  const latValid = Number.isFinite(lat) && lat >= -90 && lat <= 90
+  const lngValid = Number.isFinite(lng) && lng >= -180 && lng <= 180
+  // 只填一边或越界都视为非法：错误的坐标会让后端距离计算与排序整体失真
+  if ((latFilled || lngFilled) && !(latFilled && lngFilled && latValid && lngValid)) {
+    toast('经纬度需成对填写，纬度 -90~90、经度 -180~180')
+    return
+  }
   // 手填且没有经纬度时不编造坐标，列表按平台默认排序、不展示距离
-  coords.value = valid ? { lat, lng } : null
+  coords.value = latFilled && lngFilled ? { lat, lng } : null
+  lastLocDesc.value = desc
   locState.value = 'manual'
   locLabel.value = desc
   locSheet.value = false
@@ -273,6 +294,7 @@ async function pickLocationOnMap() {
     coords.value = { lat: picked.lat, lng: picked.lng }
     locState.value = 'ok'
     locLabel.value = picked.desc || '已选择地图位置'
+    lastLocDesc.value = picked.desc || ''
     locSheet.value = false
     loadStores()
   }
@@ -297,7 +319,8 @@ function openSystemSettings() {
 }
 
 function openRescue() {
-  rescueDesc.value = locState.value === 'ok' || locState.value === 'manual' ? locLabel.value : ''
+  // 只回填真实的位置描述（手填 / 选点），自动定位只有状态文案，不拿来当救援位置
+  rescueDesc.value = lastLocDesc.value
   rescueErr.value = ''
   // 车主的默认车型：车队更可能是大车，其余默认小车，仍可在弹层里改
   if (!rescueVehicleType.value)
