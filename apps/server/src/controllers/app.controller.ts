@@ -529,7 +529,10 @@ export class AppController {
     }
   }
 
-  /** 平台设置：客服电话 / 二维码 / 关于我们 / 协议 / 分享文案；demoLogin 供端上决定手机号授权方式 */
+  /**
+   * 平台设置：客服电话 / 二维码 / 关于我们 / 协议 / 分享文案；demoLogin 供端上决定手机号授权方式。
+   * 可选字段（icpNumber / userAgreementUrl / privacyPolicyUrl / h5Url）后台未配置时返回空串，端上按占位处理。
+   */
   @Get('settings')
   @OptionalAuth()
   async settings() {
@@ -542,6 +545,13 @@ export class AppController {
       userAgreement: map.userAgreement || '',
       privacyPolicy: map.privacyPolicy || '',
       shareTitle: map.shareTitle || '小蚂蚁轮胎救援',
+      // App 备案号：关于页展示，发布前由运营填入
+      icpNumber: map.icpNumber || '',
+      // 协议外链：配置后「关于」页的《用户协议》《隐私政策》直接打开 URL，未配置沿用内置文本
+      userAgreementUrl: map.userAgreementUrl || '',
+      privacyPolicyUrl: map.privacyPolicyUrl || '',
+      // H5 站点地址：安卓系统分享面板分享的落地链接
+      h5Url: map.h5Url || '',
       demoLogin: demoLoginAllowed(),
       wxConfigured: wxConfigured(),
     }
