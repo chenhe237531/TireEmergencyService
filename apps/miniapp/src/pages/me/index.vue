@@ -116,7 +116,10 @@ async function bindPhone() {
   phoneLoading.value = true
   phoneErr.value = ''
   try {
-    await http.post('/app/auth/phone', { phone: v }, { silent: true })
+    const res = await http.post<{ accessToken?: string }>('/app/auth/phone', { phone: v }, { silent: true })
+    // 手机号已属于另一账号时服务端会合并账号并换发主账号令牌：先替换再拉资料，否则旧令牌 40001
+    if (res?.accessToken)
+      tire.setToken(res.accessToken)
     await finishBind()
   }
   catch (e: any) {
@@ -139,7 +142,9 @@ async function onWxPhone(e: any) {
   phoneLoading.value = true
   phoneErr.value = ''
   try {
-    await http.post('/app/auth/phone', { wxPhoneCode: code }, { silent: true })
+    const res = await http.post<{ accessToken?: string }>('/app/auth/phone', { wxPhoneCode: code }, { silent: true })
+    if (res?.accessToken)
+      tire.setToken(res.accessToken)
     await finishBind()
   }
   catch (err: any) {
