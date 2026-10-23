@@ -45,6 +45,22 @@ model Driver {
   consults    ConsultRequest[]
 }
 
+/** 短信验证码：只存 HMAC-SHA256 哈希，明文不落库；成功使用后置 consumedAt，防重复使用 */
+model SmsCode {
+  id         Int       @id @default(autoincrement())
+  phone      String
+  scene      String    @default("login") // login 登录 | cancel 注销
+  codeHash   String
+  ip         String    @default("")
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, scene, createdAt])
+  @@index([ip, createdAt])
+}
+
 // ─── 门店（信息由后台录入；真实地址/电话仅后台可见，端上只做模糊展示） ───
 
 model Store {
@@ -86,9 +102,11 @@ model RescueAlert {
   assignedStoreId Int?
   assignedStore   Store?  @relation(fields: [assignedStoreId], references: [id])
   assignedAt   DateTime?
+  clientRequestId String? // 客户端幂等键（UUID）；旧客户端不传时为空，不参与去重
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  @@unique([driverId, clientRequestId])
   @@index([driverId, createdAt])
   @@index([status, createdAt])
 }
@@ -111,9 +129,11 @@ model ConsultRequest {
   note         String    @default("") // mysql: @db.Text
   handledBy    String    @default("")
   handledAt    DateTime?
+  clientRequestId String? // 客户端幂等键（UUID）；游客或旧客户端为空
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
+  @@unique([driverId, clientRequestId])
   @@index([driverId, createdAt])
 }
 
