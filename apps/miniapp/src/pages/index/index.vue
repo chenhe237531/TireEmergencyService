@@ -5,7 +5,7 @@
  * 结构：品牌头（客服电话 + 定位）→ 分类金刚区 → 门店列表 → 悬浮救援按钮。
  * 所有列表状态都有落点：骨架屏（首屏）/ 顶栏进度条（切分类）/ 空态 / 错误重试。
  */
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 import { onLoad, onPullDownRefresh, onShow, onUnload } from '@dcloudio/uni-app'
 import StoreCard from './components/StoreCard.vue'
 import TBrand from '@/components/tire/TBrand.vue'
@@ -14,11 +14,13 @@ import TSheet from '@/components/tire/TSheet.vue'
 import TSkeleton from '@/components/tire/TSkeleton.vue'
 import TState from '@/components/tire/TState.vue'
 import { http } from '@/tire/request'
+import { clearRescueDraft, loadRescueDraft, saveRescueDraft } from '@/tire/app/draft'
+import { isNetworkError, retryWithBackoff } from '@/tire/app/retry'
 import { chooseLocationOnMap, getCurrentLocation, PRIVACY_REQUIRED } from '@/tire/app/location'
 import { canInitThirdPartySdk } from '@/tire/app/privacy'
 import { useShare } from '@/tire/share'
 import { useTire } from '@/tire/store'
-import { call, clearSubmitRequestId, go, submitRequestId, toast } from '@/tire/utils'
+import { call, go, submitRequestId, toast } from '@/tire/utils'
 
 interface StoreItem {
   id: number
@@ -78,12 +80,32 @@ const rescueLoading = ref(false)
 const rescueErr = ref('')
 const rescueVehicleType = ref('')
 const rescuePlate = ref('')
+/** 弱网自动重试进度：0 表示未在重试，>0 为当前第几次重试（共 3 次） */
+const rescueRetryCount = ref(0)
 const VEHICLE_TYPES = [
   { key: 'big_truck', name: '大车' },
   { key: 'small_car', name: '小车' },
   { key: 'other', name: '其他' },
 ]
 const RESCUE_TIPS = ['高速应急车道', '桥上 / 桥下', '服务区', '小区地库', '国道 / 省道边']
+
+/** 呼救按钮文案：提交中 / 自动重试中给出进度，其余时间保持原文案 */
+const rescueConfirmText = computed(() => {
+  if (!rescueLoading.value)
+    return '立即呼救'
+  return rescueRetryCount.value > 0 ? `重试中 ${rescueRetryCount.value}/3` : '提交中'
+})
+
+/** 弱网重试提示：只在自动重试期间展示 */
+const rescueRetryTip = computed(() =>
+  rescueRetryCount.value > 0 ? `网络不稳，正在自动重试（${rescueRetryCount.value}/3），请稍候…` : '',
+)
+
+// 表单每次变更写入本地草稿（提交成功或内容清空后由 saveRescueDraft 删除）：
+// 退出页面或杀进程后内容仍在，幂等键也随草稿保留，重试不会重复建单
+watch([rescueVehicleType, rescuePlate, rescueDesc], ([vehicleType, plateNo, locationDesc]) => {
+  saveRescueDraft({ vehicleType, plateNo, locationDesc })
+})
 
 const phoneSheet = ref(false)
 const phoneVal = ref('')
@@ -319,9 +341,20 @@ function openSystemSettings() {
 }
 
 function openRescue() {
-  // 只回填真实的位置描述（手填 / 选点），自动定位只有状态文案，不拿来当救援位置
-  rescueDesc.value = lastLocDesc.value
   rescueErr.value = ''
+  rescueRetryCount.value = 0
+  const draft = loadRescueDraft()
+  if (draft) {
+    // 有草稿：恢复上次未提交成功的内容（杀进程后也一样），不从定位重新回填
+    rescueVehicleType.value = draft.vehicleType
+    rescuePlate.value = draft.plateNo
+    rescueDesc.value = draft.locationDesc
+  }
+  else {
+    // 只回填真实的位置描述（手填 / 选点），自动定位只有状态文案，不拿来当救援位置
+    rescueDesc.value = lastLocDesc.value
+    rescuePlate.value = ''
+  }
   // 车主的默认车型：车队更可能是大车，其余默认小车，仍可在弹层里改
   if (!rescueVehicleType.value)
     rescueVehicleType.value = tire.me?.role === 'fleet' ? 'big_truck' : 'small_car'
@@ -332,7 +365,12 @@ function pickTip(t: string) {
   rescueDesc.value = rescueDesc.value ? `${rescueDesc.value} · ${t}` : t
 }
 
+/**
+ * 提交救援：网络错误自动按 1s / 3s / 9s 退避重试（最多 3 次）；
+ * 业务错误（参数 / 封禁 / 频控 / 登录失效）不重试，按错误码分流处理。
+ */
 async function submitRescue() {
+  // 连点防抖：提交中直接忽略；即便请求重复发出，幂等键兜底，服务端只建一张单
   if (rescueLoading.value)
     return
   if (!rescueVehicleType.value) {
@@ -341,17 +379,27 @@ async function submitRescue() {
   }
   rescueLoading.value = true
   rescueErr.value = ''
+  rescueRetryCount.value = 0
   try {
-    await http.post('/app/rescue-alert', {
-      vehicleType: rescueVehicleType.value,
-      plateNo: rescuePlate.value.trim(),
-      lat: coords.value?.lat ?? null,
-      lng: coords.value?.lng ?? null,
-      locationDesc: rescueDesc.value.trim(),
-      // 弱网重试 / 杀进程后重试复用同一个键，服务端据此返回原工单
-      clientRequestId: submitRequestId('rescue'),
-    })
-    clearSubmitRequestId('rescue')
+    await retryWithBackoff(
+      // silent：重试期间的提示由重试进度统一展示，避免每轮失败都弹「网络不太好」
+      () => http.post('/app/rescue-alert', {
+        vehicleType: rescueVehicleType.value,
+        plateNo: rescuePlate.value.trim(),
+        lat: coords.value?.lat ?? null,
+        lng: coords.value?.lng ?? null,
+        locationDesc: rescueDesc.value.trim(),
+        // 弱网重试 / 杀进程后重试复用同一个键，服务端据此返回原工单
+        clientRequestId: submitRequestId('rescue'),
+      }, { silent: true }),
+      {
+        onRetry: (attempt) => {
+          rescueRetryCount.value = attempt
+        },
+      },
+    )
+    // 提交成功：草稿与幂等键一并删除，下一次呼救是全新的意图
+    clearRescueDraft()
     rescueSheet.value = false
     uni.showModal({
       title: '求助已发出',
@@ -367,7 +415,7 @@ async function submitRescue() {
   }
   catch (e: any) {
     if (e?.code === 40011) {
-      // 未绑手机号：先绑再自动重提，不让用户重新填一遍
+      // 未绑手机号：先绑再自动重提，不让用户重新填一遍（草稿保留在本地）
       pendingRescue.value = true
       rescueSheet.value = false
       phoneVal.value = tire.me?.phone || ''
@@ -389,8 +437,19 @@ async function submitRescue() {
         },
       })
     }
-    else if (e?.code === 40001 || e?.code === 40003) {
+    else if (e?.code === 40001) {
+      // 登录态失效：请求层已清 token；草稿保留在本地，重新登录后可继续提交
       rescueSheet.value = false
+      go('/pkg-auth/login')
+    }
+    else if (e?.code === 40003) {
+      // 账号被封禁：请求层已清登录态，这里给出明确提示
+      rescueSheet.value = false
+      toast(e?.message || '账号已被封禁，请联系客服')
+    }
+    else if (isNetworkError(e)) {
+      // 自动重试耗尽：草稿与幂等键保留，再点「立即呼救」仍复用同一个键，不会重复建单
+      rescueErr.value = '网络不太好，自动重试 3 次仍未成功；请检查网络后再次呼救，不会重复提交'
     }
     else {
       rescueErr.value = e?.message || '提交失败，请稍后重试'
@@ -398,6 +457,7 @@ async function submitRescue() {
   }
   finally {
     rescueLoading.value = false
+    rescueRetryCount.value = 0
   }
 }
 
@@ -641,7 +701,7 @@ function ensureLogin() {
       v-model:show="rescueSheet"
       title="发起故障救援"
       desc="客服会按这个位置联系你，补充一句现场情况能更快派单。"
-      confirm-text="立即呼救"
+      :confirm-text="rescueConfirmText"
       :confirm-loading="rescueLoading"
       @confirm="submitRescue"
     >
@@ -689,6 +749,11 @@ function ensureLogin() {
         <view class="mt-2 flex flex-wrap gap-1.5">
           <text v-for="t in RESCUE_TIPS" :key="t" class="t-tag" @click="pickTip(t)">{{ t }}</text>
         </view>
+      </view>
+
+      <view v-if="rescueRetryTip" class="t-readout t-readout--muted mt-3">
+        <text class="i-tabler-refresh text-[15px]" />
+        <text class="flex-1">{{ rescueRetryTip }}</text>
       </view>
 
       <view v-if="rescueErr" class="t-readout t-readout--error mt-3">
