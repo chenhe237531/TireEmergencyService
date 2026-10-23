@@ -13,7 +13,8 @@ import TField from '@/components/tire/TField.vue'
 import { http, uploadImage } from '@/tire/request'
 import { useShare } from '@/tire/share'
 import { useTire } from '@/tire/store'
-import { toast } from '@/tire/utils'
+import { errText, isValidPlate, toast } from '@/tire/utils'
+import type { Coords } from '@/tire/types'
 
 interface Photo { temp: string, url: string, status: 'uploading' | 'done' | 'fail' }
 
@@ -31,7 +32,7 @@ const photos = ref<Photo[]>([])
 
 const locState = ref<'locating' | 'ok' | 'fail'>('locating')
 const locDesc = ref('')
-const coords = ref<{ lat: number, lng: number } | null>(null)
+const coords = ref<Coords | null>(null)
 
 const submitting = ref(false)
 /** 提交过一次后才把校验错误显示出来，避免一进页面满屏红字 */
@@ -41,6 +42,7 @@ const focused = ref('')
 const MAX_PHOTO = 6
 
 const errors = computed(() => ({
+  plateNo: !isValidPlate(plateNo.value.trim()) ? '车牌号格式不对，如 豫A8K2F6' : '',
   description: !description.value.trim() ? '请描述一下故障情况' : '',
   contactName: !contactName.value.trim() ? '请填写联系人姓名' : '',
   contactPhone: !/^1\d{10}$/.test(contactPhone.value.trim())
@@ -141,11 +143,13 @@ async function submit() {
       toast('照片还在上传，稍等一下')
       return
     }
-    const first = errors.value.description
-      ? 'description'
-      : errors.value.contactName
-        ? 'contactName'
-        : 'contactPhone'
+    const first = errors.value.plateNo
+      ? 'plateNo'
+      : errors.value.description
+        ? 'description'
+        : errors.value.contactName
+          ? 'contactName'
+          : 'contactPhone'
     focused.value = first
     toast(errors.value[first as keyof typeof errors.value] || '请把必填信息补充完整')
     return
@@ -173,8 +177,8 @@ async function submit() {
     })
     resetForm()
   }
-  catch (e: any) {
-    toast(e?.message || '提交失败，请稍后再试')
+  catch (e) {
+    toast(errText(e, '提交失败，请稍后再试'))
   }
   finally {
     submitting.value = false
@@ -222,12 +226,16 @@ function resetForm() {
     <view class="t-page-pad -mt-4">
       <!-- 车辆信息 -->
       <view class="t-card px-4 py-1">
-        <TField label="车牌号" hint="不记得可不填，客服会电话确认">
+        <TField
+          label="车牌号"
+          hint="不记得可不填，客服会电话确认"
+          :error="touched ? errors.plateNo : ''"
+        >
           <input
             v-model="plateNo"
             class="t-input"
-            :class="{ 'is-focus': focused === 'plateNo' }"
-            placeholder="如 豫A8K2F6"
+            :class="{ 'is-error': touched && errors.plateNo, 'is-focus': focused === 'plateNo' }"
+            placeholder="如 豫A8K2F6 / 豫AD12345"
             :maxlength="12"
             @focus="onFieldFocus('plateNo')"
             @blur="focused = ''"

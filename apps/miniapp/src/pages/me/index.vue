@@ -9,11 +9,12 @@ import { computed, ref } from 'vue'
 import { onShow } from '@dcloudio/uni-app'
 import TButton from '@/components/tire/TButton.vue'
 import TCell from '@/components/tire/TCell.vue'
-import TSheet from '@/components/tire/TSheet.vue'
+import TPhoneSheet from '@/components/tire/TPhoneSheet.vue'
 import { http } from '@/tire/request'
 import { useShare } from '@/tire/share'
 import { DRIVER_ROLE_NAMES, useTire } from '@/tire/store'
 import { absUrl, call, go, toast } from '@/tire/utils'
+import type { AppSettings } from '@/tire/types'
 
 const tire = useTire()
 
@@ -31,13 +32,8 @@ const nickname = computed(() => tire.me?.nickname || (tire.loggedIn ? '微信用
 const roleName = computed(() => (tire.me?.role ? DRIVER_ROLE_NAMES[tire.me.role] || '已认证' : ''))
 const phoneText = computed(() => tire.me?.phone || '点击绑定')
 
-/** 绑手机号弹层 */
+/** 绑手机号弹层（演示输入 / 微信快捷验证由 TPhoneSheet 统一处理） */
 const phoneSheet = ref(false)
-const phoneVal = ref('')
-const phoneErr = ref('')
-const phoneLoading = ref(false)
-/** 演示环境允许手动输入手机号；真实微信环境走 getPhoneNumber 授权 */
-const demoLogin = ref(true)
 
 onShow(async () => {
   if (!tire.loggedIn)
@@ -51,9 +47,8 @@ async function loadPhoneSetting() {
   if (servicePhone.value)
     return
   try {
-    const s = await http.get('/app/settings', undefined, { silent: true })
+    const s = await http.get<Partial<AppSettings>>('/app/settings', undefined, { silent: true })
     servicePhone.value = s?.servicePhone || ''
-    demoLogin.value = s?.demoLogin !== false
   }
   catch {
     // 客服电话拿不到时，菜单里仍然可以进入「联系客服」页查看
@@ -90,64 +85,7 @@ function openRecords() {
 function openPhoneSheet() {
   if (!requireLogin())
     return
-  phoneVal.value = tire.me?.phone || ''
-  phoneErr.value = ''
   phoneSheet.value = true
-}
-
-async function finishBind() {
-  await tire.loadMe()
-  phoneSheet.value = false
-  toast('手机号已绑定')
-}
-
-async function bindPhone() {
-  if (!demoLogin.value) {
-    phoneErr.value = '请使用微信手机号快捷绑定'
-    return
-  }
-  const v = phoneVal.value.trim()
-  if (!/^1\d{10}$/.test(v)) {
-    phoneErr.value = '请输入 11 位手机号'
-    return
-  }
-  if (phoneLoading.value)
-    return
-  phoneLoading.value = true
-  phoneErr.value = ''
-  try {
-    await http.post('/app/auth/phone', { phone: v }, { silent: true })
-    await finishBind()
-  }
-  catch (e: any) {
-    phoneErr.value = e?.message || '绑定失败，请稍后再试'
-  }
-  finally {
-    phoneLoading.value = false
-  }
-}
-
-/** 微信手机号快捷验证 */
-async function onWxPhone(e: any) {
-  const code = e?.detail?.code
-  if (!code) {
-    phoneErr.value = '未授权手机号，请重试'
-    return
-  }
-  if (phoneLoading.value)
-    return
-  phoneLoading.value = true
-  phoneErr.value = ''
-  try {
-    await http.post('/app/auth/phone', { wxPhoneCode: code }, { silent: true })
-    await finishBind()
-  }
-  catch (err: any) {
-    phoneErr.value = err?.message || '手机号验证失败，请稍后再试'
-  }
-  finally {
-    phoneLoading.value = false
-  }
 }
 
 function onCallService() {
@@ -313,47 +251,11 @@ function logout() {
     </view>
 
     <!-- 绑定 / 改绑手机号 -->
-    <TSheet
+    <TPhoneSheet
       v-model:show="phoneSheet"
       :title="tire.me?.phone ? '更换手机号' : '绑定手机号'"
-      desc="救援时客服通过这个号码联系你，请填写常用号码。"
-      confirm-text="保存"
-      :show-confirm="demoLogin"
-      :confirm-loading="phoneLoading"
-      @confirm="bindPhone"
-    >
-      <!-- #ifdef MP-WEIXIN -->
-      <view v-if="!demoLogin" class="t-field" style="border-bottom: none; padding-top: 0">
-        <button
-          class="t-btn t-btn--primary t-btn--lg t-btn--block"
-          style="border: none"
-          open-type="getPhoneNumber"
-          @getphonenumber="onWxPhone"
-        >
-          {{ tire.me?.phone ? '微信手机号快捷更换' : '微信手机号快捷绑定' }}
-        </button>
-        <view class="t-hint mt-2">
-          微信授权后自动绑定，无需手动输入
-        </view>
-      </view>
-      <!-- #endif -->
-
-      <view v-if="demoLogin" class="t-field" style="border-bottom: none; padding-top: 0">
-        <view class="t-field__hd">
-          <text class="t-label t-label--req">手机号</text>
-        </view>
-        <input v-model="phoneVal" class="t-input" :class="{ 'is-error': phoneErr }" type="number" :maxlength="11" placeholder="请输入 11 位手机号">
-        <view v-if="phoneErr" class="t-field__err">
-          <text class="i-tabler-alert-circle text-[13px]" />
-          <text>{{ phoneErr }}</text>
-        </view>
-      </view>
-      <!-- #ifndef MP-WEIXIN -->
-      <view v-if="!demoLogin" class="t-hint">
-        当前环境不支持微信手机号授权，请在小程序内完成绑定
-      </view>
-      <!-- #endif -->
-    </TSheet>
+      :bound-toast="tire.me?.phone ? '手机号已更新' : '手机号已绑定'"
+    />
   </view>
 </template>
 

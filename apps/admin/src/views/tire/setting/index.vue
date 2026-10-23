@@ -14,14 +14,12 @@ import IconQrcode from "~icons/tabler/qrcode";
 import { message } from "@/utils/message";
 import { fileUrl, getSettings, saveSettings, uploadImage } from "@/api/tire";
 import type { PlatformSettings } from "@/api/tire";
-import { useUserStoreHook } from "@/store/modules/user";
+import { useIsSuperAdmin } from "../common";
 
 defineOptions({ name: "TireSetting" });
 
 /** 平台设置属于全局配置，仅超级管理员可改；运营进入为只读 */
-const canEdit = computed(() =>
-  useUserStoreHook().roles.includes("super_admin")
-);
+const canEdit = useIsSuperAdmin();
 
 /** 客服二维码体积上限，与后端上传接口保持一致 */
 const MAX_QR_SIZE = 2 * 1024 * 1024;

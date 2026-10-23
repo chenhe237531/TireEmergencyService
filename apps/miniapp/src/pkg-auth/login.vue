@@ -13,8 +13,9 @@ import { onLoad } from '@dcloudio/uni-app'
 import TBrand from '@/components/tire/TBrand.vue'
 import TButton from '@/components/tire/TButton.vue'
 import { http } from '@/tire/request'
-import { useTire } from '@/tire/store'
-import { deviceId, go, toast } from '@/tire/utils'
+import { DRIVER_ROLE_OPTIONS, useTire } from '@/tire/store'
+import { deviceId, errCode, errText, go, toast } from '@/tire/utils'
+import type { PageQuery } from '@/tire/types'
 
 const tire = useTire()
 
@@ -32,17 +33,14 @@ const roleShake = ref(false)
 /** 登录来源页：带 redirect 参数时回跳，否则回首页 */
 const redirect = ref('')
 
-const ROLES = [
-  { value: 'private_owner', label: '私人车主', desc: '小车 / 私家车为主，临时补胎换胎', icon: 'i-tabler-car' },
-  { value: 'fleet', label: '车队', desc: '货运车队、工程车队，多车统一调度', icon: 'i-tabler-truck' },
-  { value: 'store', label: '服务门店', desc: '轮胎店 / 修理厂，接收平台派单', icon: 'i-tabler-building-store' },
-]
+/** 身份选项与文案统一取自全局字典，资料页与这里保持一致 */
+const ROLES = DRIVER_ROLE_OPTIONS
 
 const roleName = computed(() => ROLES.find(r => r.value === role.value)?.label || '')
 /** 仅用于按钮下方的提示文案；按钮本身保持可点，点了才做 shake 校验 */
 const ready = computed(() => !!role.value && agreed.value)
 
-onLoad((options: any) => {
+onLoad((options: PageQuery = {}) => {
   redirect.value = options?.redirect ? decodeURIComponent(options.redirect) : ''
   // 已登录：本地 me 可能还没拉回来，先刷新再决定停在第一步还是直接进站
   if (tire.loggedIn)
@@ -89,7 +87,7 @@ async function login() {
   errMsg.value = ''
   try {
     const code = await getLoginCode()
-    const data = await http.post<{ accessToken: string, user: any }>('/app/auth/login', { code }, { silent: true })
+    const data = await http.post<{ accessToken: string }>('/app/auth/login', { code }, { silent: true })
     tire.setToken(data.accessToken)
     await tire.loadMe()
     if (tire.me?.role) {
@@ -100,8 +98,8 @@ async function login() {
       step.value = 2
     }
   }
-  catch (e: any) {
-    errMsg.value = e?.message && e.message !== 'network' ? e.message : '登录没有成功，请检查网络后重试'
+  catch (e) {
+    errMsg.value = errText(e, '登录没有成功，请检查网络后重试')
   }
   finally {
     loading.value = false
@@ -144,13 +142,13 @@ async function submit() {
     toast(`已按「${roleName.value}」为你服务`)
     setTimeout(jumpIn, 500)
   }
-  catch (e: any) {
-    if (e?.code === 40001) {
+  catch (e) {
+    if (errCode(e) === 40001) {
       step.value = 1
       errMsg.value = '登录已过期，请重新授权'
     }
     else {
-      toast(e?.message || '保存失败，请稍后再试')
+      toast(errText(e, '保存失败，请稍后再试'))
     }
   }
   finally {

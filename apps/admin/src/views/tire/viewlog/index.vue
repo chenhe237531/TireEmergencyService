@@ -1,11 +1,11 @@
 <script setup lang="ts">
 import { computed, onActivated, onMounted, reactive, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
-import dayjs from "dayjs";
 import IconBulb from "~icons/tabler/bulb";
 import { message } from "@/utils/message";
 import { driverList, storeList, viewLogList } from "@/api/tire";
 import type { ViewLogItem } from "@/api/tire";
+import { formatTime } from "../common";
 
 defineOptions({ name: "TireViewLog" });
 
@@ -67,9 +67,6 @@ const storeIdModel = computed({
 
 const driverLabel = (item: DriverOption) =>
   item.phone ? `${item.nickname}（${item.phone}）` : item.nickname;
-
-const formatTime = (value?: string) =>
-  value ? dayjs(value).format("YYYY-MM-DD HH:mm:ss") : "—";
 
 async function searchDrivers(keyword: string) {
   driverLoading.value = true;
@@ -371,7 +368,7 @@ onActivated(() => {
         <el-table-column label="时间" width="180">
           <template #default="{ row }">
             <span class="tabular-nums text-text_color_regular">
-              {{ formatTime(row.createdAt) }}
+              {{ formatTime(row.createdAt, "YYYY-MM-DD HH:mm:ss") }}
             </span>
           </template>
         </el-table-column>

@@ -11,6 +11,8 @@ import TBrand from '@/components/tire/TBrand.vue'
 import TState from '@/components/tire/TState.vue'
 import TSkeleton from '@/components/tire/TSkeleton.vue'
 import { http } from '@/tire/request'
+import type { AppSettings, PageQuery } from '@/tire/types'
+import { errText } from '@/tire/utils'
 
 type TabKey = 'about' | 'agreement' | 'privacy'
 
@@ -20,7 +22,7 @@ const TABS: { key: TabKey, name: string, field: string }[] = [
   { key: 'privacy', name: '隐私政策', field: 'privacyPolicy' },
 ]
 
-const settings = ref<Record<string, string>>({})
+const settings = ref<Partial<AppSettings>>({})
 const loading = ref(true)
 const errMsg = ref('')
 const tab = ref<TabKey>('about')
@@ -30,7 +32,7 @@ const content = computed(() => settings.value[current.value.field] || '')
 /** 后端内容以整段文字存储，按行渲染才能保留换行结构 */
 const lines = computed(() => String(content.value).split('\n'))
 
-onLoad((options: any) => {
+onLoad((options: PageQuery = {}) => {
   const t = options?.tab
   if (t === 'agreement' || t === 'privacy' || t === 'about')
     tab.value = t
@@ -43,8 +45,8 @@ async function load() {
   try {
     settings.value = await http.get('/app/settings', undefined, { silent: true })
   }
-  catch (e: any) {
-    errMsg.value = e?.message || '内容没加载出来'
+  catch (e) {
+    errMsg.value = errText(e, '内容没加载出来')
   }
   finally {
     loading.value = false

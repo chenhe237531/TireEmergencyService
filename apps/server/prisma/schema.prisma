@@ -19,14 +19,15 @@ datasource db {
 
 /** 后台员工（平台运营方），账号密码登录 */
 model Staff {
-  id          Int       @id @default(autoincrement())
-  username    String    @unique
-  password    String // sha256 哈希，不存明文
-  name        String
-  role        String    @default("ops") // super_admin 超级管理员 | ops 运营
-  status      String    @default("active") // active | disabled
-  lastLoginAt DateTime?
-  createdAt   DateTime  @default(now())
+  id           Int       @id @default(autoincrement())
+  username     String    @unique
+  password     String // scrypt 哈希，不存明文（旧库 sha256 登录时自动升级）
+  name         String
+  role         String    @default("ops") // super_admin 超级管理员 | ops 运营
+  status       String    @default("active") // active | disabled
+  tokenVersion Int       @default(0) // 修改密码后 +1，旧令牌立即失效
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
 }
 
 /** 司机端用户（小程序），openid 首次登录自动创建 */

@@ -10,9 +10,10 @@ import { onLoad } from '@dcloudio/uni-app'
 import TButton from '@/components/tire/TButton.vue'
 import TState from '@/components/tire/TState.vue'
 import { http } from '@/tire/request'
-import { absUrl, call, toast } from '@/tire/utils'
+import { absUrl, call, errText, toast } from '@/tire/utils'
+import type { AppSettings } from '@/tire/types'
 
-const settings = ref<Record<string, string>>({})
+const settings = ref<Partial<AppSettings>>({})
 const loading = ref(true)
 const errMsg = ref('')
 
@@ -27,8 +28,8 @@ async function load() {
   try {
     settings.value = await http.get('/app/settings', undefined, { silent: true })
   }
-  catch (e: any) {
-    errMsg.value = e?.message || '客服信息没加载出来'
+  catch (e) {
+    errMsg.value = errText(e, '客服信息没加载出来')
   }
   finally {
     loading.value = false

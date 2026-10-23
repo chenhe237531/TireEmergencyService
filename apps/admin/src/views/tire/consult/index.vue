@@ -1,28 +1,21 @@
 <script setup lang="ts">
 import { onActivated, onMounted, reactive, ref } from "vue";
-import dayjs from "dayjs";
 import { message } from "@/utils/message";
-import { consultList, ORDER_STATUS, statusTag } from "@/api/tire";
+import { consultList, ORDER_STATUS } from "@/api/tire";
 import type { ConsultItem } from "@/api/tire";
 import ConsultDetailDrawer from "./ConsultDetailDrawer.vue";
+import {
+  TICKET_TABS as TABS,
+  fetchPageGuarded,
+  formatTime,
+  tagType
+} from "../common";
+import type { TagType } from "../common";
 
 defineOptions({ name: "TireConsultList" });
 
 /** el-table 插槽 row 的静态类型是 DefaultRow，统一在此断言为业务类型 */
 const asConsult = (row: unknown) => row as ConsultItem;
-
-const TABS = [
-  { value: "all", label: "全部" },
-  { value: "pending", label: "待处理" },
-  { value: "contacting", label: "跟进中" },
-  { value: "resolved", label: "已解决" },
-  { value: "cancelled", label: "已取消" }
-];
-
-/** el-tag 的 type 是字面量联合，字典值是 string，这里收窄一次供模板使用 */
-type TagType = "primary" | "success" | "info" | "warning" | "danger";
-const tagType = (status: string): TagType =>
-  (statusTag[status] || "info") as TagType;
 
 const loading = ref(false);
 const list = ref<ConsultItem[]>([]);
@@ -38,11 +31,6 @@ const detailId = ref<number | null>(null);
 
 let hasActivated = false;
 
-const formatTime = (value?: string | null) =>
-  value && dayjs(value).isValid()
-    ? dayjs(value).format("YYYY-MM-DD HH:mm")
-    : "—";
-
 function imageCount(row: ConsultItem) {
   return row.images?.length || 0;
 }
@@ -56,21 +44,11 @@ async function getList() {
       start: query.dateRange?.[0] || "",
       end: query.dateRange?.[1] || ""
     };
-    let res = await consultList({
-      ...params,
-      page: pagination.page,
-      pageSize: pagination.pageSize
-    });
     // 筛选后总数变小，当前页可能超界，回退到最后一页再取一次
-    const maxPage = Math.max(1, Math.ceil(res.total / pagination.pageSize));
-    if (pagination.page > maxPage) {
-      pagination.page = maxPage;
-      res = await consultList({
-        ...params,
-        page: maxPage,
-        pageSize: pagination.pageSize
-      });
-    }
+    const res = await fetchPageGuarded(
+      page => consultList({ ...params, page, pageSize: pagination.pageSize }),
+      pagination
+    );
     list.value = res.list || [];
     pagination.total = res.total || 0;
   } catch (err) {
