@@ -97,7 +97,7 @@ async function withInitLock(provider, url, fn) {
   }
 }
 
-const COMMANDS = ['generate', 'push', 'seed', 'init', 'reset', 'schema']
+const COMMANDS = ['generate', 'push', 'seed', 'init', 'reset', 'schema', 'normalize-phones']
 
 /**
  * 首次部署时业务库可能还不存在（云托管 MySQL 开通后不会自动建业务库）：
@@ -191,6 +191,14 @@ async function main() {
         prisma(['db', 'push', '--skip-generate', '--force-reset'], schema)
       }
       tsNode('prisma/seed.ts')
+      break
+    /**
+     * phone 唯一约束数据迁移（issue #3 / ADR-0002）：
+     * 直接 push 带 @unique 的最终 schema 会因历史空串/重复手机号失败，
+     * 所以先推去掉 @unique 的过渡 schema，脚本内完成数据修复后再推最终 schema。
+     */
+    case 'normalize-phones':
+      tsNode('prisma/normalize-phones.ts')
       break
   }
 }

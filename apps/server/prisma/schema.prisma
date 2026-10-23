@@ -29,20 +29,35 @@ model Staff {
   createdAt   DateTime  @default(now())
 }
 
-/** 司机端用户（小程序），openid 首次登录自动创建 */
+/** 司机端用户：手机号是稳定身份（可空唯一，未绑定为 NULL），openid 是微信渠道绑定 */
 model Driver {
   id          Int       @id @default(autoincrement())
   openid      String?   @unique
   nickname    String    @default("微信用户")
   avatarUrl   String    @default("")
-  phone       String    @default("")
+  phone       String?   @unique // 司机稳定身份；未绑定为 NULL（历史空串由 normalize-phones 迁移为 NULL）
   role        String    @default("") // private_owner 私人车主 | fleet 车队 | store 服务门店；空=未完善身份
-  status      String    @default("active") // active | blocked
+  status      String    @default("active") // active | blocked | merged（被合并进主账号，仅审计）
   lastLoginAt DateTime?
+  mergedIntoId Int?     // 账号被合并后指向主账号 id（ADR-0002 审计用）
+  mergedAt    DateTime?
   createdAt   DateTime  @default(now())
   viewLogs    ViewLog[]
   rescues     RescueAlert[]
   consults    ConsultRequest[]
+}
+
+/** 账号合并流水：微信与安卓同手机号归并到一个主账号时留痕，后台可追溯（ADR-0002） */
+model DriverMergeLog {
+  id           Int      @id @default(autoincrement())
+  fromDriverId Int // 被合并（清空 openid/phone，status=merged）的司机
+  toDriverId   Int // 保留的主账号（创建时间更早者）
+  phone        String   @default("") // 触发合并的手机号
+  reason       String   @default("") // wx-bind-merge 微信绑定合并 | data-migration 历史数据迁移
+  createdAt    DateTime @default(now())
+
+  @@index([toDriverId, createdAt])
+  @@index([fromDriverId])
 }
 
 /** 短信验证码：只存 HMAC-SHA256 哈希，明文不落库；成功使用后置 consumedAt，防重复使用 */
