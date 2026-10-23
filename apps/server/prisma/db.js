@@ -166,7 +166,7 @@ async function main() {
       break
     case 'push':
       if (provider === 'mysql') await ensureDatabase(url)
-      prisma(['db', 'push', '--skip-generate'], schema)
+      prisma(['db', 'push', '--skip-generate', '--accept-data-loss'], schema)
       break
     case 'seed':
       tsNode('prisma/seed.ts')
@@ -174,8 +174,10 @@ async function main() {
     case 'init':
       await withInitLock(provider, url, async () => {
         // 建库放在锁内：多实例同时冷启动时也只会有一个真正执行 DDL
+        // --accept-data-loss：schema 加唯一约束/改列时 Prisma 会因「可能丢数据」拦截，
+        // 启动同步必须放行（真正会丢数据的破坏性改动由 reset 路径的 --force-reset 兜底）
         if (provider === 'mysql') await ensureDatabase(url)
-        prisma(['db', 'push', '--skip-generate'], schema)
+        prisma(['db', 'push', '--skip-generate', '--accept-data-loss'], schema)
         // seed 内部按表幂等补齐：生产只保证管理员/设置/FAQ，演示数据由 SEED_DEMO 控制
         tsNode('prisma/seed.ts')
       })
@@ -185,7 +187,7 @@ async function main() {
         // SQLite 相对路径以 schema 所在目录为基准
         const file = url.slice('file:'.length)
         rmSync(isAbsolute(file) ? file : join(__dirname, file), { force: true })
-        prisma(['db', 'push', '--skip-generate'], schema)
+        prisma(['db', 'push', '--skip-generate', '--accept-data-loss'], schema)
       } else {
         await ensureDatabase(url)
         prisma(['db', 'push', '--skip-generate', '--force-reset'], schema)
