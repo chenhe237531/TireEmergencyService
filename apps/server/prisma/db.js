@@ -8,6 +8,7 @@
  *   node prisma/db.js init         同步表结构，库为空时自动写入演示数据（容器启动用）
  *   node prisma/db.js reset        清空并重建演示库（仅开发环境）
  *   node prisma/db.js schema       只生成 MySQL 版 schema 文件
+ *   node prisma/db.js normalize-phones  phone 唯一约束的数据迁移（见下方预检说明）
  *
  * schema.prisma 是唯一的数据模型源（SQLite）。MySQL 版由本脚本自动生成：
  * 替换 provider，并把带 `// mysql: @db.Text` 标记的字段加上原生类型（MySQL 的 String 默认是 VARCHAR(191)，长文本放不下）。
@@ -99,6 +100,50 @@ async function withInitLock(provider, url, fn) {
 
 const COMMANDS = ['generate', 'push', 'seed', 'init', 'reset', 'schema', 'normalize-phones']
 
+/** 手机号打码：日志里只露前 3 后 4，不泄露完整号码 */
+function maskPhone(p) {
+  if (p === '') return "''（未绑定）"
+  return p.length >= 7 ? `${p.slice(0, 3)}****${p.slice(-4)}` : `${p.slice(0, 2)}****`
+}
+
+/**
+ * phone 唯一索引预检（issue #10）：历史库中未绑定司机的 phone='' 与重复手机号
+ * 会让最终 schema 的 phone @unique 建索引失败，容器启动陷入崩溃循环。
+ * init / push 前先查一次重复，发现问题就以可读指引退出，代替晦涩的 Prisma 报错。
+ * 查询本身失败（库 / Driver 表还没建、账号无权限）不阻断——后续 db push 会给出对应报错。
+ */
+async function preflightPhoneUnique() {
+  const { PrismaClient } = require('@prisma/client')
+  const client = new PrismaClient()
+  try {
+    const rows = await client.$queryRawUnsafe(
+      // NULL 不算重复：phone 唯一索引允许任意多个 NULL（SQLite / MySQL 同），
+      // 但 GROUP BY 会把 NULL 聚成一组，必须显式排除，否则迁移过的干净库会被误拦
+      'SELECT phone, COUNT(*) AS n FROM Driver WHERE phone IS NOT NULL GROUP BY phone HAVING COUNT(*) > 1 ORDER BY n DESC',
+    )
+    if (!rows.length) return
+    const drivers = rows.reduce((s, r) => s + Number(r.n), 0)
+    const sample = rows.slice(0, 5).map(r => `${maskPhone(String(r.phone))}×${r.n}`).join('、')
+    const guidance = new Error(
+      `[db] Driver.phone 存在 ${rows.length} 组重复值（涉及 ${drivers} 个司机，如 ${sample}），`
+      + `无法创建 phone 唯一索引。请先备份，然后执行一次数据迁移（可重复执行）：\n`
+      + `      node prisma/db.js normalize-phones\n`
+      + `      （空串→NULL、重复手机号按 ADR-0002 合并账号；完成后再重新 push / 部署）`,
+    )
+    guidance.preflight = true
+    throw guidance
+  }
+  catch (e) {
+    // 只有「确有重复」才阻断；查询自身失败（库 / 表未建、无权限）交给后续 db push 报错
+    if (e && e.preflight) throw e
+    const reason = String((e && e.message) || e).replace(/\s+/g, ' ').trim().slice(0, 160)
+    console.warn(`[db] phone 唯一预检跳过：${reason}`)
+  }
+  finally {
+    await client.$disconnect().catch(() => {})
+  }
+}
+
 /**
  * 首次部署时业务库可能还不存在（云托管 MySQL 开通后不会自动建业务库）：
  * 先连 information_schema 查一次，缺库就 CREATE DATABASE（utf8mb4），再交给 db push 同步表结构。
@@ -166,6 +211,7 @@ async function main() {
       break
     case 'push':
       if (provider === 'mysql') await ensureDatabase(url)
+      await preflightPhoneUnique()
       prisma(['db', 'push', '--skip-generate', '--accept-data-loss'], schema)
       break
     case 'seed':
@@ -177,6 +223,8 @@ async function main() {
         // --accept-data-loss：schema 加唯一约束/改列时 Prisma 会因「可能丢数据」拦截，
         // 启动同步必须放行（真正会丢数据的破坏性改动由 reset 路径的 --force-reset 兜底）
         if (provider === 'mysql') await ensureDatabase(url)
+        // 历史空串 / 重复手机号会让 phone 唯一索引建不出来：先预检，失败带指引退出（issue #10）
+        await preflightPhoneUnique()
         prisma(['db', 'push', '--skip-generate', '--accept-data-loss'], schema)
         // seed 内部按表幂等补齐：生产只保证管理员/设置/FAQ，演示数据由 SEED_DEMO 控制
         tsNode('prisma/seed.ts')

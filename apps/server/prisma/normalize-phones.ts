@@ -53,7 +53,10 @@ async function main() {
   console.log('[normalize-phones] 步骤 1/3：推送过渡 schema（phone 可空、暂无唯一索引）')
   writeTmpSchema()
   try {
-    prismaPush(TMP_SCHEMA)
+    // --accept-data-loss：过渡 schema 相对旧库只会「新增」（新表、新可空列、
+    // 以及全新且全 NULL 的 clientRequestId 唯一索引，不可能撞重复）；
+    // Prisma 对新增唯一约束一律发数据丢失告警，必须放行，否则步骤 1 在任何库上都会被拦
+    prismaPush(TMP_SCHEMA, true)
 
     console.log('[normalize-phones] 步骤 2/3：修复历史数据')
     const prisma = new PrismaClient()

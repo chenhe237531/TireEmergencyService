@@ -144,6 +144,7 @@ pnpm dev:h5       # 小程序 H5 版：http://localhost:9100
 | 变量 | 必填 | 说明 |
 |---|---|---|
 | `JWT_SECRET` | 是 | 随机长字符串；缺失时容器会直接启动失败 |
+| `SMS_CODE_SECRET` | 是 | 短信验证码 HMAC 密钥（`openssl rand -hex 32`）；缺失时容器会直接启动失败 |
 | `INITIAL_ADMIN_PASSWORD` | 建议 | 首次初始化管理员密码；不填则随机生成并打印在启动日志中 |
 | `INITIAL_OPS_PASSWORD` | 按需 | 需要运营账号时设置；不设置则不会创建 ops |
 | `WX_APPID` / `WX_SECRET` | 按需 | 不配置时必须保持 `ALLOW_DEMO_LOGIN=0`，否则只能用于演示 |
@@ -155,6 +156,22 @@ pnpm dev:h5       # 小程序 H5 版：http://localhost:9100
 ```bash
 docker build --build-arg APT_MIRROR=http://mirrors.aliyun.com -t tire-rescue:local .
 ```
+
+### 从旧版本升级：phone 唯一约束数据迁移（必读）
+
+`Driver.phone` 已改为**可空唯一**（手机号主身份，ADR-0002）。旧库里未绑定手机号的司机 `phone` 是空串，直接部署新版会让启动时的自动建表在创建唯一索引时失败，**容器陷入崩溃循环**。因此升级必须按以下顺序（低峰期执行）：
+
+```bash
+# 1. 备份生产数据库
+# 2. 数据迁移：空串 → NULL、重复手机号按 ADR-0002 合并账号（事务内，可重复执行，再跑一遍是 no-op）
+DB_PROVIDER=mysql DATABASE_URL='mysql://user:pass@host:3306/tire' node prisma/db.js normalize-phones
+# 3. 云托管环境变量新增 SMS_CODE_SECRET（见上表，缺失容器起不来）
+# 4. 再部署新版本；此后启动的表结构同步变为无差异 no-op
+```
+
+容器启动（`db.js init`）与手动 `db.js push` 前都有**预检**：发现重复手机号会直接给出上述指引并退出，不会抛出难排查的 Prisma 原始报错。本地 SQLite 开发库若有同样问题，跑一次 `node prisma/db.js normalize-phones` 即可。
+
+**安卓应用内更新清单（`/downloads/android.json`）**：App 端按 `VITE_APP_SERVER_BASEURL` 的域名拼接 `/downloads/android.json` 拉取版本清单（schema 见 TireEmergencyApp 仓 `docs/update-manifest.md`），后端本身不托管该路径——发 APK 时需把清单与 APK 上传到**与 API 同域**的 `/downloads/` 路径（网关 / 对象存储 / 静态目录），并对该路径禁用长缓存。
 
 **`deploy/Dockerfile`（VPS + SQLite）**：前端在本地构建后随部署包上传，镜像内只装 API 依赖；SQLite 数据落在 `/data` 卷，默认端口 3000，以非 root 用户（uid 10001）运行。首次执行 `remote-setup.sh` 会生成随机 `JWT_SECRET` 与初始管理员密码，写入 `tire.env`，默认 `SEED_DEMO=0`、`ALLOW_DEMO_LOGIN=0`；需要演示数据时把 `tire.env` 里的 `SEED_DEMO` 改为 `1`。
 
