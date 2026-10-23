@@ -538,4 +538,27 @@ export class AppController {
   async upload(@CurrentUser() u: DriverUser | undefined, @UploadedFile() file: Express.Multer.File) {
     return saveUploadFile(this.prisma, file, u?.id ? `driver#${u.id}` : 'anonymous')
   }
+
+  /**
+   * 图片上传（base64 JSON）：微信云托管 callContainer 不支持 multipart 直传，
+   * 小程序切到 callContainer 模式后走这个通道（普通浏览器 / H5 仍走上面的 multipart）。
+   */
+  @Post('upload-base64')
+  @OptionalAuth()
+  async uploadBase64(@CurrentUser() u: DriverUser | undefined, @Body() body: { name?: string, dataBase64: string }) {
+    const b64 = String(body?.dataBase64 || '').replace(/^data:image\/[\w.+-]+;base64,/, '')
+    if (!b64) throw new BizError(40020, '请选择要上传的图片')
+    const buffer = Buffer.from(b64, 'base64')
+    if (!buffer.length) throw new BizError(40020, '图片数据不合法')
+    const name = (body.name || 'photo.jpg').slice(0, 100)
+    const extToMime: Record<string, string> = { jpg: 'image/jpeg', jpeg: 'image/jpeg', png: 'image/png', webp: 'image/webp' }
+    const ext = (name.split('.').pop() || '').toLowerCase()
+    const file = {
+      originalname: name,
+      mimetype: extToMime[ext] || 'image/jpeg',
+      size: buffer.length,
+      buffer,
+    } as Express.Multer.File
+    return saveUploadFile(this.prisma, file, u?.id ? `driver#${u.id}` : 'anonymous')
+  }
 }
