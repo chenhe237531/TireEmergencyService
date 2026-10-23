@@ -15,6 +15,8 @@ export const Err = {
   needConsent: (type: string) => new BizError(40010, '需要您的授权', { consentType: type }),
   needPhone: () => new BizError(40011, '需要绑定手机号'),
   bad: (msg = '参数错误') => new BizError(40020, msg),
+  smsCodeInvalid: () => new BizError(40021, '验证码错误或已过期，请重新获取'),
+  tooMany: (msg = '操作太频繁，请稍后再试') => new BizError(42900, msg),
   notFound: (msg = '资源不存在') => new BizError(40400, msg),
   conflict: (msg = '状态已变化，请刷新') => new BizError(40900, msg),
 }
