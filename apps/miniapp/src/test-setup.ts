@@ -25,6 +25,7 @@ const uniMock = {
   getStorageSync: vi.fn().mockReturnValue(null),
   setStorageSync: vi.fn(),
   removeStorageSync: vi.fn(),
+  getStorageInfoSync: vi.fn().mockReturnValue({ keys: [] }),
   getStorage: vi.fn(),
   setStorage: vi.fn(),
   removeStorage: vi.fn(),

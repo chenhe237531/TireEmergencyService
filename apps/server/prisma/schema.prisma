@@ -37,10 +37,11 @@ model Driver {
   avatarUrl   String    @default("")
   phone       String?   @unique // 司机稳定身份；未绑定为 NULL（历史空串由 normalize-phones 迁移为 NULL）
   role        String    @default("") // private_owner 私人车主 | fleet 车队 | store 服务门店；空=未完善身份
-  status      String    @default("active") // active | blocked | merged（被合并进主账号，仅审计）
+  status      String    @default("active") // active | blocked | merged 被合并进主账号 | deleted 已注销（ADR-0006 匿名化骨架）
   lastLoginAt DateTime?
   mergedIntoId Int?     // 账号被合并后指向主账号 id（ADR-0002 审计用）
   mergedAt    DateTime?
+  deletedAt   DateTime? // 账号注销时间；注销后同手机号可重新注册（ADR-0006）
   createdAt   DateTime  @default(now())
   viewLogs    ViewLog[]
   rescues     RescueAlert[]

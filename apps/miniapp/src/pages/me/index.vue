@@ -166,14 +166,13 @@ function onCallService() {
   go('/pkg-me/contact')
 }
 
-/** 账号注销入口：功能由 issue #10 接线，这里只提示「即将开放」 */
+/** 账号注销入口：进入注销流程页（影响说明 + 短信二次验证，issue #10） */
 function onAccountDelete() {
-  uni.showModal({
-    title: '账号注销',
-    content: '账号注销功能即将开放，如需帮助请联系平台客服。',
-    showCancel: false,
-    confirmText: '知道了',
-  })
+  if (!tire.loggedIn) {
+    toast('请先登录后再注销账号')
+    return
+  }
+  go('/pkg-me/account-delete')
 }
 
 function logout() {
@@ -324,7 +323,7 @@ function logout() {
         </view>
       </view>
       <view class="t-cell-group mt-2">
-        <TCell title="账号注销" icon="i-tabler-user-minus" value="即将开放" @click="onAccountDelete" />
+        <TCell title="账号注销" icon="i-tabler-user-minus" @click="onAccountDelete" />
       </view>
 
       <!-- 服务承诺：给「为什么要留手机号」一个可信解释 -->
