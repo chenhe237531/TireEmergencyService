@@ -509,6 +509,15 @@ button.t-btn {
     box-shadow var(--dur);
 }
 
+/* 微信原生 input 默认高度只有 1.4rem，垂直 padding 会挤占文字区，placeholder/输入值会被裁掉下半截。
+   显式定高并用 line-height 垂直居中（水平 padding 保留），小程序与 H5 表现一致 */
+.t-input {
+  height: 46px;
+  padding-top: 0;
+  padding-bottom: 0;
+  line-height: 44px; /* 46px 定高 - 上下 1px 边框 */
+}
+
 .t-textarea {
   min-height: 104px;
   line-height: 1.65;
