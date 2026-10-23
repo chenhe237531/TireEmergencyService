@@ -560,6 +560,27 @@ export class AppController {
   }
 
   /**
+   * 咨询记录补传照片：文字提交不等待所有图片成功，失败照片由端上本地留存，
+   * 后续重试上传成功后调用该接口合并到原记录（去重，与提交时一样最多 9 张）。
+   */
+  @Post('consults/:id/images')
+  async consultImages(
+    @CurrentUser() u: DriverUser,
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { images?: string[] },
+  ) {
+    const row = await this.prisma.consultRequest.findFirst({ where: { id, driverId: u.id } })
+    if (!row) throw Err.notFound('咨询记录不存在')
+    const add = Array.isArray(body.images) ? body.images.filter(i => typeof i === 'string' && i.startsWith('/uploads/')) : []
+    // images 为 Json 字段：先收敛成 string[] 再合并去重
+    const current = Array.isArray(row.images) ? row.images.filter((i): i is string => typeof i === 'string') : []
+    const images = [...new Set([...current, ...add])]
+    if (images.length > 9) throw Err.bad('现场照片最多 9 张')
+    await this.prisma.consultRequest.update({ where: { id }, data: { images } })
+    return { id, images }
+  }
+
+  /**
    * 平台设置：客服电话 / 二维码 / 关于我们 / 协议 / 分享文案；demoLogin 供端上决定手机号授权方式。
    * 可选字段（icpNumber / userAgreementUrl / privacyPolicyUrl / h5Url）后台未配置时返回空串，端上按占位处理。
    */
