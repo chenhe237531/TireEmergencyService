@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Ip, Param, ParseIntPipe, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common'
+import { Body, Controller, Delete, Get, Ip, Param, ParseIntPipe, Patch, Post, Query, UploadedFile, UseInterceptors } from '@nestjs/common'
 import { memoryStorage } from 'multer'
 import { FileInterceptor } from '@nestjs/platform-express/multer'
 import { createHash } from 'node:crypto'
@@ -9,6 +9,7 @@ import { saveUploadFile } from '../common/upload'
 import { distanceLabel, haversineKm, pick } from '../common/util'
 import { demoLoginAllowed, getWxPhoneNumber, wxConfigured } from '../common/wx'
 import { mergeDrivers } from '../common/driver-merge'
+import { anonymizeDriver } from '../common/account-deletion'
 import { SMS_CODE_TTL_MS, SMS_IP_HOURLY_LIMIT, SMS_MAX_ATTEMPTS, SMS_PHONE_DAILY_LIMIT, SMS_RESEND_INTERVAL_MS, demoCode, generateCode, hashCode, sendCode, verifyCode } from '../common/sms'
 import { PrismaService } from '../common/prisma.service'
 
@@ -103,15 +104,17 @@ export class AppAuthController {
   /**
    * 发送短信验证码：不泄露手机号是否注册。
    * 频控：同手机号 60 秒 1 条、每天 5 条；同 IP 每小时 10 条。
+   * scene：login 登录 | delete 注销账号二次验证（ADR-0006）。
    */
   @Post('auth/sms/send')
-  async sendSms(@Body() body: { phone?: string }, @Ip() ip: string) {
+  async sendSms(@Body() body: { phone?: string, scene?: string }, @Ip() ip: string) {
     const phone = String(body.phone || '').trim()
+    const scene = body.scene === 'delete' ? 'delete' : 'login'
     if (!/^1[3-9]\d{9}$/.test(phone)) throw Err.bad('请输入正确的手机号')
 
     const now = new Date()
     const last = await this.prisma.smsCode.findFirst({
-      where: { phone, scene: 'login' },
+      where: { phone, scene },
       orderBy: { createdAt: 'desc' },
     })
     if (last && now.getTime() - last.createdAt.getTime() < SMS_RESEND_INTERVAL_MS)
@@ -119,7 +122,7 @@ export class AppAuthController {
 
     const dayStart = new Date(now)
     dayStart.setHours(0, 0, 0, 0)
-    const phoneCount = await this.prisma.smsCode.count({ where: { phone, scene: 'login', createdAt: { gte: dayStart } } })
+    const phoneCount = await this.prisma.smsCode.count({ where: { phone, scene, createdAt: { gte: dayStart } } })
     if (phoneCount >= SMS_PHONE_DAILY_LIMIT)
       throw Err.tooMany('该手机号今日验证码次数已达上限，请明天再试')
 
@@ -131,26 +134,20 @@ export class AppAuthController {
 
     const code = generateCode()
     await this.prisma.smsCode.create({
-      data: { phone, scene: 'login', codeHash: hashCode(phone, code), ip, expiresAt: new Date(now.getTime() + SMS_CODE_TTL_MS) },
+      data: { phone, scene, codeHash: hashCode(phone, code), ip, expiresAt: new Date(now.getTime() + SMS_CODE_TTL_MS) },
     })
     await sendCode(phone, code)
 
-    return { sent: true, expiresIn: Math.floor(SMS_CODE_TTL_MS / 1000), ...(demoCode() ? { demoCode: code } : {}) }
+    return { sent: true, scene, expiresIn: Math.floor(SMS_CODE_TTL_MS / 1000), ...(demoCode() ? { demoCode: code } : {}) }
   }
 
   /**
-   * 手机号 + 验证码登录：新手机号自动创建司机账号，均不提示「未注册」。
-   * 令牌受众 app，30 天有效；返回 isNew 供端上做首登引导。
+   * 校验并原子消费一条短信验证码：错误累加 attempts（5 次作废），成功置 consumedAt 禁止复用。
+   * 登录与注销共用同一套校验规则。
    */
-  @Post('auth/sms/login')
-  async smsLogin(@Body() body: { phone?: string, code?: string }) {
-    const phone = String(body.phone || '').trim()
-    const code = String(body.code || '').trim()
-    if (!/^1[3-9]\d{9}$/.test(phone)) throw Err.bad('请输入正确的手机号')
-    if (!/^\d{6}$/.test(code)) throw Err.bad('请输入 6 位验证码')
-
+  private async consumeSmsCode(phone: string, code: string, scene: string) {
     const record = await this.prisma.smsCode.findFirst({
-      where: { phone, scene: 'login', consumedAt: null, expiresAt: { gt: new Date() } },
+      where: { phone, scene, consumedAt: null, expiresAt: { gt: new Date() } },
       orderBy: { createdAt: 'desc' },
     })
     if (!record || record.attempts >= SMS_MAX_ATTEMPTS) throw Err.smsCodeInvalid()
@@ -164,6 +161,20 @@ export class AppAuthController {
       data: { consumedAt: new Date() },
     })
     if (consumed.count === 0) throw Err.smsCodeInvalid()
+  }
+
+  /**
+   * 手机号 + 验证码登录：新手机号自动创建司机账号，均不提示「未注册」。
+   * 令牌受众 app，30 天有效；返回 isNew 供端上做首登引导。
+   */
+  @Post('auth/sms/login')
+  async smsLogin(@Body() body: { phone?: string, code?: string }) {
+    const phone = String(body.phone || '').trim()
+    const code = String(body.code || '').trim()
+    if (!/^1[3-9]\d{9}$/.test(phone)) throw Err.bad('请输入正确的手机号')
+    if (!/^\d{6}$/.test(code)) throw Err.bad('请输入 6 位验证码')
+
+    await this.consumeSmsCode(phone, code, 'login')
 
     let driver = await this.prisma.driver.findFirst({ where: { phone } })
     const isNew = !driver
@@ -228,6 +239,25 @@ export class AppAuthController {
 
   private view(d: { id: number, nickname: string, avatarUrl: string, phone: string | null, role: string }) {
     return { id: d.id, nickname: d.nickname, avatarUrl: d.avatarUrl, phone: d.phone, role: d.role, roleEmpty: !d.role }
+  }
+
+  /**
+   * 注销账号（ADR-0006）：需先绑定手机号并用 scene=delete 的短信验证码二次验证
+   * （登录验证码不可复用），验证通过后匿名化司机资料并清理关联数据。
+   * 注销后同一手机号可重新注册，历史工单保留统计骨架但不关联新账号。
+   */
+  @Delete('account')
+  @Aud('app')
+  async deleteAccount(@CurrentUser() u: DriverUser, @Body() body: { code?: string }) {
+    const code = String(body.code || '').trim()
+    if (!/^\d{6}$/.test(code)) throw Err.bad('请输入 6 位验证码')
+    const driver = await this.prisma.driver.findUnique({ where: { id: u.id } })
+    if (!driver || driver.status !== 'active') throw Err.unauth()
+    if (!driver.phone) throw Err.needPhone()
+    // 二次验证用独立 scene，登录验证码不能用于注销
+    await this.consumeSmsCode(driver.phone, code, 'delete')
+    await anonymizeDriver(this.prisma, driver.id)
+    return { deleted: true }
   }
 }
 

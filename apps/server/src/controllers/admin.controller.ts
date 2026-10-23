@@ -437,7 +437,7 @@ export class AdminController {
         openid: undefined,
         roleEmpty: !d.role,
         roleName: DRIVER_ROLES[d.role] || '未完善',
-        statusName: d.status === 'blocked' ? '已封禁' : d.status === 'merged' ? '已合并' : '正常',
+        statusName: d.status === 'blocked' ? '已封禁' : d.status === 'merged' ? '已合并' : d.status === 'deleted' ? '已注销' : '正常',
       })),
       total, page, pageSize,
     }
@@ -450,8 +450,8 @@ export class AdminController {
     if (!b.status || !['active', 'blocked'].includes(b.status)) throw Err.bad('司机状态参数错误')
     const driver = await this.prisma.driver.findUnique({ where: { id }, select: { id: true, status: true } })
     if (!driver) throw Err.notFound('司机不存在')
-    // 已合并账号只剩审计骨架，不再允许人工改状态
-    if (driver.status === 'merged') throw Err.bad('该账号已合并进主账号，不支持此操作')
+    // 已合并/已注销账号只剩审计骨架，不再允许人工改状态
+    if (driver.status === 'merged' || driver.status === 'deleted') throw Err.bad('该账号已合并或已注销，不支持此操作')
     const updated = await this.prisma.driver.update({ where: { id }, data: { status: b.status } })
     return { id: updated.id, status: updated.status, statusName: updated.status === 'blocked' ? '已封禁' : '正常' }
   }
