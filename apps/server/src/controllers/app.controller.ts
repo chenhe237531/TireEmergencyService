@@ -8,6 +8,7 @@ import { RESCUE_VEHICLE_TYPES, TICKET_STATUS_NAMES } from '../common/ticket'
 import { saveUploadFile } from '../common/upload'
 import { distanceLabel, haversineKm, pick } from '../common/util'
 import { demoLoginAllowed, getWxPhoneNumber, wxConfigured } from '../common/wx'
+import { mergeDrivers } from '../common/driver-merge'
 import { SMS_CODE_TTL_MS, SMS_IP_HOURLY_LIMIT, SMS_MAX_ATTEMPTS, SMS_PHONE_DAILY_LIMIT, SMS_RESEND_INTERVAL_MS, demoCode, generateCode, hashCode, sendCode, verifyCode } from '../common/sms'
 import { PrismaService } from '../common/prisma.service'
 
@@ -183,6 +184,8 @@ export class AppAuthController {
   /**
    * 绑定手机号：真实微信环境走 wxPhoneCode（getPhoneNumber 快速验证）；
    * 演示环境允许直接传手机号，便于 H5 / 本地联调。
+   * 手机号已属于另一司机时按 ADR-0002 合并：保留创建时间更早者为主账号，
+   * 当前登录的司机若被合并走，返回换发的新令牌（端上必须替换，否则下次请求 40001）。
    */
   @Post('auth/phone')
   @Aud('app')
@@ -199,11 +202,31 @@ export class AppAuthController {
     else {
       throw new BizError(40020, '请使用微信手机号快捷验证')
     }
-    const driver = await this.prisma.driver.update({ where: { id: u.id }, data: { phone } })
-    return this.view(driver)
+
+    const existing = await this.prisma.driver.findFirst({ where: { phone }, select: { id: true } })
+    if (existing && existing.id !== u.id) {
+      const { primaryId } = await mergeDrivers(this.prisma, { aId: u.id, bId: existing.id, phone, reason: 'wx-bind-merge' })
+      const primary = await this.prisma.driver.findUniqueOrThrow({ where: { id: primaryId } })
+      return {
+        ...this.view(primary),
+        merged: true,
+        // 当前登录的司机被合并走时换发主账号令牌；主账号就是当前司机则令牌不变
+        ...(primaryId !== u.id ? { accessToken: signToken({ id: primaryId }, 'app') } : {}),
+      }
+    }
+
+    try {
+      const driver = await this.prisma.driver.update({ where: { id: u.id }, data: { phone } })
+      return this.view(driver)
+    }
+    catch (e: any) {
+      // 并发绑定同一手机号撞唯一约束：提示重试，不暴露对方账号信息
+      if (e?.code === 'P2002') throw Err.conflict('该手机号刚被其他账号绑定，请刷新后重试')
+      throw e
+    }
   }
 
-  private view(d: { id: number, nickname: string, avatarUrl: string, phone: string, role: string }) {
+  private view(d: { id: number, nickname: string, avatarUrl: string, phone: string | null, role: string }) {
     return { id: d.id, nickname: d.nickname, avatarUrl: d.avatarUrl, phone: d.phone, role: d.role, roleEmpty: !d.role }
   }
 }
