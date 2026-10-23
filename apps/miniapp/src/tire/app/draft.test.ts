@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { submitRequestId } from '../utils'
-import { clearRescueDraft, isEmptyRescueDraft, loadRescueDraft, RESCUE_DRAFT_KEY, saveRescueDraft } from './draft'
+import { clearConsultDraft, clearRescueDraft, isEmptyConsultDraft, isEmptyRescueDraft, loadConsultDraft, loadRescueDraft, CONSULT_DRAFT_KEY, RESCUE_DRAFT_KEY, saveConsultDraft, saveRescueDraft } from './draft'
 
 describe('救援表单草稿', () => {
   const storage = new Map<string, any>()
@@ -79,5 +79,97 @@ describe('救援表单草稿', () => {
     expect(isEmptyRescueDraft({ vehicleType: 'small_car', plateNo: '', locationDesc: '' })).toBe(true)
     expect(isEmptyRescueDraft({ vehicleType: 'small_car', plateNo: '豫A8K2F6', locationDesc: '' })).toBe(false)
     expect(isEmptyRescueDraft({ vehicleType: '', plateNo: '', locationDesc: '郑州东站' })).toBe(false)
+  })
+})
+
+describe('咨询表单草稿', () => {
+  const storage = new Map<string, any>()
+
+  beforeEach(() => {
+    storage.clear()
+    vi.mocked(uni.getStorageSync).mockImplementation((key: string) => storage.get(key) ?? '')
+    vi.mocked(uni.setStorageSync).mockImplementation((key: string, value: any) => {
+      storage.set(key, value)
+    })
+    vi.mocked(uni.removeStorageSync).mockImplementation((key: string) => {
+      storage.delete(key)
+    })
+  })
+
+  const fullDraft = () => ({
+    plateNo: '豫A8K2F6',
+    carModel: '解放J6',
+    locationDesc: '京港澳高速 K680 应急车道',
+    description: '右前轮爆胎',
+    contactName: '王师傅',
+    contactPhone: '13800138000',
+  })
+
+  it('保存后可恢复全部字段', () => {
+    saveConsultDraft(fullDraft())
+
+    expect(loadConsultDraft()).toEqual(fullDraft())
+  })
+
+  it('没有草稿时读取返回 null', () => {
+    expect(loadConsultDraft()).toBeNull()
+  })
+
+  it('内容清空后保存：草稿被删除（用户主动清空）', () => {
+    saveConsultDraft(fullDraft())
+    saveConsultDraft({ plateNo: '', carModel: '', locationDesc: '', description: '', contactName: '', contactPhone: '' })
+
+    expect(storage.has(CONSULT_DRAFT_KEY)).toBe(false)
+    expect(loadConsultDraft()).toBeNull()
+  })
+
+  it('只填部分字段也算有效草稿（照片失败重试期间至少保留已填内容）', () => {
+    saveConsultDraft({ plateNo: '', carModel: '', locationDesc: '', description: '右前轮漏气', contactName: '王师傅', contactPhone: '13800138000' })
+
+    expect(loadConsultDraft()?.description).toBe('右前轮漏气')
+  })
+
+  it('提交成功后清理：草稿与幂等键一并删除，下次提交用新键', () => {
+    saveConsultDraft(fullDraft())
+    const key = submitRequestId('consult')
+    expect(storage.get('tire_submit_request_id_consult')).toBe(key)
+
+    clearConsultDraft()
+
+    expect(storage.has(CONSULT_DRAFT_KEY)).toBe(false)
+    expect(storage.has('tire_submit_request_id_consult')).toBe(false)
+    expect(submitRequestId('consult')).not.toBe(key)
+  })
+
+  it('草稿在则幂等键在：弱网重试与杀进程后都复用同一个键', () => {
+    saveConsultDraft(fullDraft())
+    const first = submitRequestId('consult')
+
+    expect(loadConsultDraft()?.description).toBe('右前轮爆胎')
+    expect(submitRequestId('consult')).toBe(first)
+  })
+
+  it('咨询与救援草稿互不影响：各自独立存储', () => {
+    saveConsultDraft(fullDraft())
+    saveRescueDraft({ vehicleType: 'big_truck', plateNo: '豫B12345', locationDesc: '服务区' })
+
+    expect(loadConsultDraft()?.plateNo).toBe('豫A8K2F6')
+    expect(loadRescueDraft()?.plateNo).toBe('豫B12345')
+
+    clearConsultDraft()
+    expect(loadRescueDraft()?.plateNo).toBe('豫B12345')
+    expect(storage.has(RESCUE_DRAFT_KEY)).toBe(true)
+  })
+
+  it('存储内容损坏时按无草稿处理，不抛错', () => {
+    storage.set(CONSULT_DRAFT_KEY, 'not-an-object')
+
+    expect(loadConsultDraft()).toBeNull()
+  })
+
+  it('isEmptyConsultDraft：任一文字字段非空就不算空草稿', () => {
+    expect(isEmptyConsultDraft(null)).toBe(true)
+    expect(isEmptyConsultDraft({ plateNo: '', carModel: '', locationDesc: '', description: '', contactName: '', contactPhone: '' })).toBe(true)
+    expect(isEmptyConsultDraft({ ...fullDraft(), plateNo: '', description: '' })).toBe(false)
   })
 })

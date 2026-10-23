@@ -132,6 +132,7 @@ export const http = {
 /**
  * 图片上传（multipart/form-data，字段名 file）：后端存数据库并返回 { url: '/uploads/xxx', size }。
  * 云托管 callContainer 模式不支持 multipart 直传，改读文件转 base64 走 JSON 接口（/app/upload-base64）。
+ * silent：配合 retryWithBackoff 逐张自动重试时使用，重试期间的失败提示由调用方统一展示。
  */
 function readFileBase64(filePath: string): Promise<string> {
   return new Promise((resolve, reject) => {
@@ -150,12 +151,12 @@ function readFileBase64(filePath: string): Promise<string> {
   })
 }
 
-export function uploadImage(filePath: string): Promise<{ url: string, size: number }> {
+export function uploadImage(filePath: string, opts: { silent?: boolean } = {}): Promise<{ url: string, size: number }> {
   // #ifdef MP-WEIXIN
   if (CLOUD_ENV && CLOUD_SERVICE) {
     const name = filePath.split('/').pop() || 'photo.jpg'
     return readFileBase64(filePath)
-      .then(dataBase64 => request<{ url: string, size: number }>('POST', '/app/upload-base64', { name, dataBase64 }, { loading: '上传中' }))
+      .then(dataBase64 => request<{ url: string, size: number }>('POST', '/app/upload-base64', { name, dataBase64 }, { loading: '上传中', silent: opts.silent }))
   }
   // #endif
   return new Promise((resolve, reject) => {
@@ -173,16 +174,19 @@ export function uploadImage(filePath: string): Promise<{ url: string, size: numb
             uni.removeStorageSync(TOKEN_KEY)
             uni.$emit('tire:auth-invalid', body?.message || '账号已被封禁')
           }
-          uni.showToast({ title: body?.message || '上传失败', icon: 'none' })
+          if (!opts.silent)
+            uni.showToast({ title: body?.message || '上传失败', icon: 'none' })
           reject(new ApiError(body?.code ?? -1, body?.message || '上传失败'))
         }
         catch (e) {
-          uni.showToast({ title: '上传失败', icon: 'none' })
+          if (!opts.silent)
+            uni.showToast({ title: '上传失败', icon: 'none' })
           reject(new ApiError(-1, 'parse'))
         }
       },
       fail: () => {
-        uni.showToast({ title: '上传失败', icon: 'none' })
+        if (!opts.silent)
+          uni.showToast({ title: '上传失败', icon: 'none' })
         reject(new ApiError(-1, 'network'))
       },
     })
