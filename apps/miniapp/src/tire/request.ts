@@ -131,9 +131,33 @@ export const http = {
 
 /**
  * 图片上传（multipart/form-data，字段名 file）：后端存数据库并返回 { url: '/uploads/xxx', size }。
- * 微信云托管 callContainer 模式暂不支持 multipart 直传，生产建议配置合法域名直连或改造为云存储中转。
+ * 云托管 callContainer 模式不支持 multipart 直传，改读文件转 base64 走 JSON 接口（/app/upload-base64）。
  */
+function readFileBase64(filePath: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    // #ifdef MP-WEIXIN
+    uni.getFileSystemManager().readFile({
+      filePath,
+      encoding: 'base64',
+      success: r => resolve(r.data as string),
+      fail: () => reject(new ApiError(-1, 'network')),
+    })
+    return
+    // #endif
+    // #ifndef MP-WEIXIN
+    reject(new ApiError(-1, 'network'))
+    // #endif
+  })
+}
+
 export function uploadImage(filePath: string): Promise<{ url: string, size: number }> {
+  // #ifdef MP-WEIXIN
+  if (CLOUD_ENV && CLOUD_SERVICE) {
+    const name = filePath.split('/').pop() || 'photo.jpg'
+    return readFileBase64(filePath)
+      .then(dataBase64 => request<{ url: string, size: number }>('POST', '/app/upload-base64', { name, dataBase64 }, { loading: '上传中' }))
+  }
+  // #endif
   return new Promise((resolve, reject) => {
     uni.uploadFile({
       url: `${BASE}/app/upload`,

@@ -45,6 +45,22 @@ model Driver {
   consults    ConsultRequest[]
 }
 
+/** 短信验证码：只存 HMAC-SHA256 哈希，明文不落库；成功使用后置 consumedAt，防重复使用 */
+model SmsCode {
+  id         Int       @id @default(autoincrement())
+  phone      String
+  scene      String    @default("login") // login 登录 | cancel 注销
+  codeHash   String
+  ip         String    @default("")
+  attempts   Int       @default(0)
+  consumedAt DateTime?
+  expiresAt  DateTime
+  createdAt  DateTime  @default(now())
+
+  @@index([phone, scene, createdAt])
+  @@index([ip, createdAt])
+}
+
 // ─── 门店（信息由后台录入；真实地址/电话仅后台可见，端上只做模糊展示） ───
 
 model Store {
