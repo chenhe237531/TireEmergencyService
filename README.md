@@ -169,6 +169,8 @@ DB_PROVIDER=mysql DATABASE_URL='mysql://user:pass@host:3306/tire' node prisma/db
 # 4. 再部署新版本；此后启动的表结构同步变为无差异 no-op
 ```
 
+**云托管 MySQL 无法从本机直连时的替代路径**：内网地址（10.x）连不上、容器又在崩溃循环没有 shell 时，跳过上面第 2 步，改为在云托管「服务设置 → 环境变量」新增 `TIRE_AUTO_NORMALIZE_PHONES=1` 后**重新部署**——启动 `init` 检测到重复手机号会自动执行同一迁移（空串置 NULL、重复号按 ADR-0002 合并，明细写 `DriverMergeLog`），完成后服务正常起来；**起来后删掉该变量**。迁移会合并账号（不可逆），设变量前务必先在控制台备份数据库。
+
 容器启动（`db.js init`）与手动 `db.js push` 前都有**预检**：发现重复手机号会直接给出上述指引并退出，不会抛出难排查的 Prisma 原始报错。本地 SQLite 开发库若有同样问题，跑一次 `node prisma/db.js normalize-phones` 即可。
 
 **安卓应用内更新清单（`/downloads/android.json`）**：App 端按 `VITE_APP_SERVER_BASEURL` 的域名拼接 `/downloads/android.json` 拉取版本清单（schema 见 TireEmergencyApp 仓 `docs/update-manifest.md`），后端本身不托管该路径——发 APK 时需把清单与 APK 上传到**与 API 同域**的 `/downloads/` 路径（网关 / 对象存储 / 静态目录），并对该路径禁用长缓存。

@@ -106,42 +106,58 @@ function maskPhone(p) {
   return p.length >= 7 ? `${p.slice(0, 3)}****${p.slice(-4)}` : `${p.slice(0, 2)}****`
 }
 
-/**
- * phone 唯一索引预检（issue #10）：历史库中未绑定司机的 phone='' 与重复手机号
- * 会让最终 schema 的 phone @unique 建索引失败，容器启动陷入崩溃循环。
- * init / push 前先查一次重复，发现问题就以可读指引退出，代替晦涩的 Prisma 报错。
- * 查询本身失败（库 / Driver 表还没建、账号无权限）不阻断——后续 db push 会给出对应报错。
- */
-async function preflightPhoneUnique() {
+/** 查 Driver.phone 重复分组（不含 NULL：唯一索引允许任意多个 NULL，但 GROUP BY 会把 NULL 聚成一组） */
+async function findDuplicatePhones() {
   const { PrismaClient } = require('@prisma/client')
   const client = new PrismaClient()
   try {
-    const rows = await client.$queryRawUnsafe(
-      // NULL 不算重复：phone 唯一索引允许任意多个 NULL（SQLite / MySQL 同），
-      // 但 GROUP BY 会把 NULL 聚成一组，必须显式排除，否则迁移过的干净库会被误拦
+    return await client.$queryRawUnsafe(
       'SELECT phone, COUNT(*) AS n FROM Driver WHERE phone IS NOT NULL GROUP BY phone HAVING COUNT(*) > 1 ORDER BY n DESC',
     )
-    if (!rows.length) return
-    const drivers = rows.reduce((s, r) => s + Number(r.n), 0)
-    const sample = rows.slice(0, 5).map(r => `${maskPhone(String(r.phone))}×${r.n}`).join('、')
-    const guidance = new Error(
-      `[db] Driver.phone 存在 ${rows.length} 组重复值（涉及 ${drivers} 个司机，如 ${sample}），`
-      + `无法创建 phone 唯一索引。请先备份，然后执行一次数据迁移（可重复执行）：\n`
-      + `      node prisma/db.js normalize-phones\n`
-      + `      （空串→NULL、重复手机号按 ADR-0002 合并账号；完成后再重新 push / 部署）`,
-    )
-    guidance.preflight = true
-    throw guidance
-  }
-  catch (e) {
-    // 只有「确有重复」才阻断；查询自身失败（库 / 表未建、无权限）交给后续 db push 报错
-    if (e && e.preflight) throw e
-    const reason = String((e && e.message) || e).replace(/\s+/g, ' ').trim().slice(0, 160)
-    console.warn(`[db] phone 唯一预检跳过：${reason}`)
   }
   finally {
     await client.$disconnect().catch(() => {})
   }
+}
+
+/**
+ * phone 唯一索引预检（issue #10）：历史库中未绑定司机的 phone='' 与重复手机号
+ * 会让最终 schema 的 phone @unique 建索引失败，容器启动陷入崩溃循环。
+ * init / push 前先查一次重复：发现问题默认以可读指引退出；显式设置
+ * TIRE_AUTO_NORMALIZE_PHONES=1 时改为自动执行同一迁移（云托管 MySQL 在内网，
+ * 无法从本机直连跑脚本，容器崩溃循环时也没有 shell 可用，只能靠环境变量授权）。
+ * 迁移会合并同手机号账号（ADR-0002，不可逆），设置开关前务必先备份数据库。
+ */
+async function ensurePhoneUnique() {
+  let rows
+  try {
+    rows = await findDuplicatePhones()
+  }
+  catch (e) {
+    // 查询自身失败（库 / Driver 表还没建、账号无权限）不阻断——后续 db push 会给出对应报错
+    const reason = String((e && e.message) || e).replace(/\s+/g, ' ').trim().slice(0, 160)
+    console.warn(`[db] phone 唯一预检跳过：${reason}`)
+    return
+  }
+  if (!rows.length) return
+  const drivers = rows.reduce((s, r) => s + Number(r.n), 0)
+  const sample = rows.slice(0, 5).map(r => `${maskPhone(String(r.phone))}×${r.n}`).join('、')
+  if (process.env.TIRE_AUTO_NORMALIZE_PHONES === '1') {
+    console.log(`[db] Driver.phone 有 ${rows.length} 组重复值（${drivers} 个司机，如 ${sample}），TIRE_AUTO_NORMALIZE_PHONES=1，自动执行迁移：`)
+    tsNode('prisma/normalize-phones.ts')
+    const left = await findDuplicatePhones().catch(() => [])
+    if (left.length) {
+      throw new Error(`[db] 自动迁移后仍有 ${left.length} 组重复手机号，请人工核查 Driver 表与 DriverMergeLog 后重试`)
+    }
+    console.log('[db] phone 迁移完成，继续同步表结构')
+    return
+  }
+  throw new Error(
+    `[db] Driver.phone 存在 ${rows.length} 组重复值（涉及 ${drivers} 个司机，如 ${sample}），`
+    + `无法创建 phone 唯一索引。请先备份数据库，然后二选一：\n`
+    + `      1. 能直连数据库的机器：node prisma/db.js normalize-phones（可重复执行，完成后再 push / 部署）\n`
+    + `      2. 云托管等无法直连的环境：环境变量 TIRE_AUTO_NORMALIZE_PHONES=1 后重新部署，init 会自动执行同一迁移`,
+  )
 }
 
 /**
@@ -211,7 +227,7 @@ async function main() {
       break
     case 'push':
       if (provider === 'mysql') await ensureDatabase(url)
-      await preflightPhoneUnique()
+      await ensurePhoneUnique()
       prisma(['db', 'push', '--skip-generate', '--accept-data-loss'], schema)
       break
     case 'seed':
@@ -223,8 +239,9 @@ async function main() {
         // --accept-data-loss：schema 加唯一约束/改列时 Prisma 会因「可能丢数据」拦截，
         // 启动同步必须放行（真正会丢数据的破坏性改动由 reset 路径的 --force-reset 兜底）
         if (provider === 'mysql') await ensureDatabase(url)
-        // 历史空串 / 重复手机号会让 phone 唯一索引建不出来：先预检，失败带指引退出（issue #10）
-        await preflightPhoneUnique()
+        // 历史空串 / 重复手机号会让 phone 唯一索引建不出来：先预检（issue #10）；
+        // 默认带指引退出，TIRE_AUTO_NORMALIZE_PHONES=1 时自动执行迁移后继续
+        await ensurePhoneUnique()
         prisma(['db', 'push', '--skip-generate', '--accept-data-loss'], schema)
         // seed 内部按表幂等补齐：生产只保证管理员/设置/FAQ，演示数据由 SEED_DEMO 控制
         tsNode('prisma/seed.ts')
